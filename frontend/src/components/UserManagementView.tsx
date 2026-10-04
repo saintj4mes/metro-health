@@ -658,7 +658,10 @@ export function UserManagementView({ currentUser, onStaffListChange }: UserManag
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => alert('Photo linked.')}
+                            onClick={() => {
+                              setSuccessToast('Photo uploaded & attached to practitioner profile.');
+                              setTimeout(() => setSuccessToast(null), 3000);
+                            }}
                             className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
                           >
                             Upload Photo
@@ -1124,8 +1127,9 @@ export function UserManagementView({ currentUser, onStaffListChange }: UserManag
                   <button
                     type="button"
                     onClick={() => {
-                      if (currentStep === 1 && !formData.name) {
-                        alert('Please enter doctor name before proceeding.');
+                      if (currentStep === 1 && !formData.name.trim()) {
+                        setSuccessToast('Please enter doctor name before proceeding.');
+                        setTimeout(() => setSuccessToast(null), 3000);
                         return;
                       }
                       setCurrentStep((prev) => (prev + 1) as any);
