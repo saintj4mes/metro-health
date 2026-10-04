@@ -22,6 +22,7 @@ import {
   ChevronDown,
   User,
   History,
+  X,
 } from 'lucide-react';
 import { BranchLocation } from '@/lib/ph-constants';
 import { StaffUser, formatBranchAccessLabel } from '@/lib/user-management-store';
@@ -49,6 +50,8 @@ interface SidebarProps {
   currentUser: StaffUser;
   staffList: StaffUser[];
   onSwitchUser: (user: StaffUser) => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export function Sidebar({
@@ -60,6 +63,8 @@ export function Sidebar({
   currentUser,
   staffList,
   onSwitchUser,
+  isMobileOpen,
+  onCloseMobile,
 }: SidebarProps) {
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
 
@@ -114,11 +119,13 @@ export function Sidebar({
   ];
 
   return (
-    <aside
-      className={`relative flex flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out dark:border-slate-800 dark:bg-slate-900 ${
-        collapsed ? 'w-16' : 'w-64'
-      }`}
-    >
+    <>
+      {/* Desktop Sidebar (hidden on mobile) */}
+      <aside
+        className={`hidden md:flex relative flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out dark:border-slate-800 dark:bg-slate-900 ${
+          collapsed ? 'w-16' : 'w-64'
+        }`}
+      >
       {/* Brand Header */}
       <div className="flex h-14 items-center justify-between border-b border-slate-100 px-4">
         {!collapsed && (
@@ -292,5 +299,97 @@ export function Sidebar({
         )}
       </div>
     </aside>
+
+    {/* Mobile Off-Canvas Navigation Drawer (< md) */}
+    {isMobileOpen && (
+      <div className="fixed inset-0 z-50 flex md:hidden">
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+          onClick={onCloseMobile}
+        />
+        <aside className="relative flex w-72 max-w-[85vw] flex-col bg-white h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200 dark:bg-slate-900">
+          {/* Mobile Header with Close button */}
+          <div className="flex h-14 items-center justify-between border-b border-slate-100 px-4 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-bold text-sm shadow-xs">
+                +
+              </div>
+              <div>
+                <div className="font-bold text-xs tracking-tight text-slate-900 dark:text-white leading-none">
+                  Metro Health <span className="text-purple-600">PH</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Clinical EHR</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Mobile Nav Links */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+            {navSections.map((section) => (
+              <div key={section.title} className="space-y-1">
+                <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {section.title}
+                </div>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentNav === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        onNavigate(item.id);
+                        onCloseMobile?.();
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium min-h-[44px] transition ${
+                        isActive
+                          ? 'bg-sky-50 font-bold text-sky-700'
+                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-sky-600' : 'text-slate-400'}`} />
+                      <span className="flex-1 text-left">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom Current User */}
+          <div className="border-t border-slate-200 p-3 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                {currentUser?.name
+                  ? currentUser.name
+                      .split(' ')
+                      .filter((w) => !w.startsWith('Dr.'))
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join('')
+                  : 'MD'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                  {currentUser?.name}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate">
+                  {currentBranch.name}
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    )}
+  </>
   );
 }

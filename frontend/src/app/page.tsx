@@ -30,6 +30,7 @@ export default function ClinicalWorkbenchPage() {
   const [currentBranch, setCurrentBranch] = useState<BranchLocation>(CLINIC_BRANCHES[0]);
   const [currentNav, setCurrentNav] = useState<NavItem>('chart');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
 
   // Staff User Management & Active Persona
@@ -118,6 +119,8 @@ export default function ClinicalWorkbenchPage() {
         currentUser={currentUser}
         staffList={staffUsers}
         onSwitchUser={handleSwitchUser}
+        isMobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       {/* 2. Main Workbench Shell */}
@@ -129,6 +132,7 @@ export default function ClinicalWorkbenchPage() {
           onOpenSearch={() => setSearchOpen(true)}
           onNewAdmission={() => setCurrentNav('admit')}
           currentUser={currentUser}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
         />
 
         {/* Scrollable Clinical Work Area */}

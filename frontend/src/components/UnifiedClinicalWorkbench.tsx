@@ -47,6 +47,8 @@ import {
   ShieldAlert,
   FolderKanban,
   CheckCircle2,
+  Menu,
+  ArrowLeft,
 } from 'lucide-react';
 
 export type WorkbenchTab =
@@ -83,6 +85,11 @@ export function UnifiedClinicalWorkbench({
   const [navCollapsed, setNavCollapsed] = useState<boolean>(false);
   const [patientSummaryCollapsed, setPatientSummaryCollapsed] = useState<boolean>(false);
   const [activeNav, setActiveNav] = useState<string>('patients');
+
+  // Mobile Responsive States (Adapts to Mobile Phones & Tablets)
+  const [mobileNavDrawerOpen, setMobileNavDrawerOpen] = useState<boolean>(false);
+  const [mobilePatientProfileOpen, setMobilePatientProfileOpen] = useState<boolean>(false);
+  const [mobileDetailViewOpen, setMobileDetailViewOpen] = useState<boolean>(false);
 
   // Patients & Active Selection
   const [patientsList, setPatientsList] = useState<PatientProfileData[]>(WORKBENCH_PATIENTS);
@@ -250,13 +257,424 @@ export function UnifiedClinicalWorkbench({
   const netBillingPayable = Math.max(0, discountCalc.netPayablePhp - philHealthCredit);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white font-sans text-slate-900 antialiased selection:bg-blue-100">
+    <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-white font-sans text-slate-900 antialiased selection:bg-blue-100">
+      {/* Mobile Top App Bar (< md) */}
+      <header className="md:hidden flex h-14 items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-30">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileNavDrawerOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 transition min-h-[44px] min-w-[44px]"
+            title="Open Menu"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex items-center gap-1.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-bold text-xs shadow-xs">
+              +
+            </div>
+            <div>
+              <span className="block font-bold text-xs text-slate-900 leading-none">Metro Health</span>
+              <span className="block text-[9px] text-slate-400 font-medium">Clinical EHR</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Patient Switcher Chip on Mobile */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMobilePatientProfileOpen(true)}
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1.5 px-3 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition min-h-[44px]"
+            title="View Patient Demographics & Profile"
+          >
+            <img
+              src={
+                currentPatient.avatarUrl ||
+                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&h=160&q=80'
+              }
+              alt={currentPatient.name}
+              className="h-6 w-6 rounded-full object-cover"
+            />
+            <span className="max-w-[85px] truncate">{currentPatient.name.split(' ')[0]}</span>
+            <span className="text-[10px] text-slate-500 font-mono">({currentPatient.age})</span>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition min-h-[44px] min-w-[44px]"
+            title="Search Records"
+            aria-label="Search Records"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Off-Canvas Nav Drawer (< md) */}
+      {mobileNavDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setMobileNavDrawerOpen(false)}
+          />
+          <div className="relative flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="flex h-14 items-center justify-between px-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-bold text-sm">
+                  +
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 leading-tight">Metro Health PH</span>
+                  <span className="block text-[10px] text-slate-400">Clinical EHR System</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileNavDrawerOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
+                aria-label="Close Navigation Menu"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Practitioner & Branch Card */}
+            <div className="p-3 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-purple-700 font-bold text-xs">
+                  {currentUser.name
+                    .split(' ')
+                    .map((n) => n[0])
+                    .slice(0, 2)
+                    .join('')}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</div>
+                  <div className="text-[10px] text-purple-700 font-medium truncate">{currentBranch.name}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Nav Links */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  onOpenSearch?.();
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <Search className="h-4 w-4 text-slate-500" />
+                <span>Search Records (⌘K)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  setActiveNav('patients');
+                  onNavigateToView?.('chart');
+                }}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium min-h-[44px] ${
+                  activeNav === 'patients' ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Users className="h-4 w-4 text-sky-600" />
+                <span>Patients (Active Chart)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  setActiveNav('schedule');
+                  onNavigateToView?.('schedule');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <Calendar className="h-4 w-4 text-slate-500" />
+                <span>Schedule & Appointments</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  setActiveNav('messages');
+                  setActiveTab('Messages');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <Mail className="h-4 w-4 text-slate-500" />
+                <span>Clinical Messages</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  setActiveNav('tasks');
+                  setActiveTab('Tasks');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <ClipboardCheck className="h-4 w-4 text-slate-500" />
+                <span>Tasks & Orders</span>
+              </button>
+
+              <div className="pt-3 pb-1 border-t border-slate-100">
+                <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Quick Actions
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  onNavigateToView?.('admit');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <Plus className="h-4 w-4 text-slate-500" />
+                <span>New Patient Admission</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  setActiveTab('Billing');
+                  setActiveNav('billing');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <CreditCard className="h-4 w-4 text-slate-500" />
+                <span>Billing & Official Receipts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  onNavigateToView?.('claims');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <ShieldCheck className="h-4 w-4 text-slate-500" />
+                <span>PhilHealth eClaims</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavDrawerOpen(false);
+                  onNavigateToView?.('queue');
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
+              >
+                <FolderKanban className="h-4 w-4 text-slate-500" />
+                <span>Facility Patient Queue</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile & Tablet Patient Demographics & Profile Bottom Sheet (< xl) */}
+      {mobilePatientProfileOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center xl:hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setMobilePatientProfileOpen(false)}
+          />
+          <div className="relative flex max-h-[90vh] w-full sm:max-w-lg flex-col rounded-t-2xl sm:rounded-lg bg-white shadow-2xl z-10 overflow-hidden">
+            {/* Sheet Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white">
+              <div className="flex items-center gap-3">
+                <img
+                  src={
+                    currentPatient.avatarUrl ||
+                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&h=160&q=80'
+                  }
+                  alt={currentPatient.name}
+                  className="h-10 w-10 rounded-full object-cover border border-slate-200 shadow-2xs"
+                />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">{currentPatient.name}</h3>
+                  <div className="text-xs text-slate-500 font-mono">
+                    {currentPatient.dob} ({currentPatient.age}y &bull; {currentPatient.gender})
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobilePatientProfileOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
+                aria-label="Close Patient Profile"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Patient Information Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Quick Switcher */}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Switch Active Patient Record
+                </label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => {
+                    setSelectedPatientId(e.target.value);
+                    const nextPat = patientsList.find((p) => p.id === e.target.value);
+                    if (nextPat?.tasks[0]) setSelectedTaskId(nextPat.tasks[0].id);
+                  }}
+                  className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-base sm:text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 min-h-[44px]"
+                >
+                  {patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.age} • {p.gender})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Demographics List */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-2 text-xs text-slate-700">
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>DOB: {currentPatient.dob} ({currentPatient.age} years old)</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Users className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>Gender: {currentPatient.gender} &bull; Ethnicity: {currentPatient.race}</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <MapPin className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                  <span>{currentPatient.address}, {currentPatient.city}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Languages className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>Preferred Language: {currentPatient.language}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Stethoscope className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span className="font-semibold text-slate-900">Attending: {currentPatient.primaryClinician}</span>
+                </div>
+              </div>
+
+              {/* Insurance & PhilHealth */}
+              <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">Insurance & PhilHealth</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                    ACTIVE
+                  </span>
+                </div>
+                <div className="font-semibold text-slate-800">{currentPatient.insurance.provider}</div>
+                <div className="text-[11px] font-mono text-slate-500">
+                  PIN: {currentPatient.insurance.policyId}
+                </div>
+                {currentPatient.insurance.statutoryId && (
+                  <div className="pt-1">
+                    <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold font-mono text-amber-800 border border-amber-200">
+                      OSCA ID: {currentPatient.insurance.statutoryId} (RA 9994)
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Allergies Accordion with + Button */}
+              <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">Documented Allergies</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobilePatientProfileOpen(false);
+                      setShowAddAllergyModal(true);
+                    }}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 min-h-[36px]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+                {currentPatient.allergies.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">No allergies documented</p>
+                ) : (
+                  currentPatient.allergies.map((alg) => (
+                    <div key={alg.id} className="flex items-center justify-between border-t border-slate-100 pt-1.5">
+                      <span className="font-medium text-slate-800">{alg.substance}</span>
+                      <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-bold text-rose-700 border border-rose-200">
+                        {alg.status}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Problems Accordion with + Button */}
+              <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">Clinical Problems (ICD-10)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobilePatientProfileOpen(false);
+                      setShowAddProblemModal(true);
+                    }}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 min-h-[36px]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+                {currentPatient.problems.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">No active problems</p>
+                ) : (
+                  currentPatient.problems.map((prob) => (
+                    <div key={prob.id} className="flex items-center justify-between border-t border-slate-100 pt-1.5">
+                      <div>
+                        <div className="font-medium text-slate-800">{prob.condition}</div>
+                        <div className="text-[10px] font-mono text-slate-400">ICD-10: {prob.icd10}</div>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                        {prob.status}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Done Button */}
+            <div className="p-3 border-t border-slate-100 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setMobilePatientProfileOpen(false)}
+                className="w-full rounded-lg bg-slate-900 py-3 text-xs font-bold text-white shadow-xs hover:bg-slate-800 min-h-[44px]"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
-      {/* COLUMN 1: LEFT NAVIGATION SIDEBAR (Matches Reference Style 1:1)           */}
+      {/* COLUMN 1: LEFT NAVIGATION SIDEBAR (Desktop & Tablet)                      */}
       {/* ========================================================================= */}
       <aside
-        className={`flex flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out ${
-          navCollapsed ? 'w-16' : 'w-52'
+        className={`hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out ${
+          navCollapsed ? 'w-16' : 'w-16 xl:w-52'
         } shrink-0 select-none z-20`}
       >
         {/* Top Logo / App Title */}
@@ -265,7 +683,7 @@ export function UnifiedClinicalWorkbench({
             <span className="text-base font-black leading-none">+</span>
           </div>
           {!navCollapsed && (
-            <div className="min-w-0">
+            <div className="hidden xl:block min-w-0">
               <span className="block text-xs font-bold tracking-tight text-slate-900 leading-none">
                 Metro Health <span className="text-purple-600">PH</span>
               </span>
@@ -282,11 +700,12 @@ export function UnifiedClinicalWorkbench({
           <button
             type="button"
             onClick={onOpenSearch}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            title="Search (⌘K)"
           >
             <Search className="h-4 w-4 shrink-0 text-slate-500" />
             {!navCollapsed && (
-              <span className="flex-1 text-left flex items-center justify-between">
+              <span className="hidden xl:flex flex-1 text-left items-center justify-between">
                 <span>Search</span>
                 <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-0.2 text-[9px] font-mono text-slate-400">
                   ⌘K
@@ -299,14 +718,15 @@ export function UnifiedClinicalWorkbench({
           <button
             type="button"
             onClick={() => onNavigateToView?.('branches')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'spaces'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
+            title="Spaces"
           >
             <Layers className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Spaces</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Spaces</span>}
           </button>
 
           {/* Patients (Active in reference image) */}
@@ -316,14 +736,15 @@ export function UnifiedClinicalWorkbench({
               setActiveNav('patients');
               onNavigateToView?.('chart');
             }}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'patients'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
+            title="Patients"
           >
             <Users className="h-4 w-4 shrink-0 text-sky-600" />
-            {!navCollapsed && <span>Patients</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Patients</span>}
           </button>
 
           {/* Schedule */}
@@ -333,14 +754,15 @@ export function UnifiedClinicalWorkbench({
               setActiveNav('schedule');
               onNavigateToView?.('schedule');
             }}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'schedule'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
+            title="Schedule"
           >
             <Calendar className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Schedule</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Schedule</span>}
           </button>
 
           {/* Messages */}
@@ -350,14 +772,15 @@ export function UnifiedClinicalWorkbench({
               setActiveNav('messages');
               setActiveTab('Messages');
             }}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'messages'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
+            title="Messages"
           >
             <Mail className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Messages</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Messages</span>}
           </button>
 
           {/* Tasks */}
@@ -367,20 +790,21 @@ export function UnifiedClinicalWorkbench({
               setActiveNav('tasks');
               setActiveTab('Tasks');
             }}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'tasks'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
+            title="Tasks"
           >
             <ClipboardCheck className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Tasks</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Tasks</span>}
           </button>
 
           {/* Divider: Quick Links */}
           <div className="pt-3 pb-1">
             {!navCollapsed && (
-              <span className="block px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <span className="hidden xl:block px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Quick Links
               </span>
             )}
@@ -390,10 +814,11 @@ export function UnifiedClinicalWorkbench({
           <button
             type="button"
             onClick={() => onNavigateToView?.('admit')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            title="New Patient"
           >
             <Plus className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>New Patient</span>}
+            {!navCollapsed && <span className="hidden xl:inline">New Patient</span>}
           </button>
 
           {/* Cashier & Billing */}
@@ -403,30 +828,33 @@ export function UnifiedClinicalWorkbench({
               setActiveTab('Billing');
               setActiveNav('billing');
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            title="Billing & Ledger"
           >
             <CreditCard className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Billing & Ledger</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Billing & Ledger</span>}
           </button>
 
           {/* PhilHealth eClaims */}
           <button
             type="button"
             onClick={() => onNavigateToView?.('claims')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            title="PhilHealth Claims"
           >
             <ShieldCheck className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>PhilHealth Claims</span>}
+            {!navCollapsed && <span className="hidden xl:inline">PhilHealth Claims</span>}
           </button>
 
           {/* Today's Queue */}
           <button
             type="button"
             onClick={() => onNavigateToView?.('queue')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            title="Facility Queue"
           >
             <FolderKanban className="h-4 w-4 shrink-0 text-slate-500" />
-            {!navCollapsed && <span>Facility Queue</span>}
+            {!navCollapsed && <span className="hidden xl:inline">Facility Queue</span>}
           </button>
         </div>
 
@@ -434,7 +862,7 @@ export function UnifiedClinicalWorkbench({
         <div className="border-t border-slate-200 p-2.5 bg-slate-50/50">
           <div className="flex items-center justify-between">
             {!navCollapsed && (
-              <div className="min-w-0 flex items-center gap-2">
+              <div className="hidden xl:flex min-w-0 items-center gap-2">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
                   {currentUser.name
                     .split(' ')
@@ -468,7 +896,7 @@ export function UnifiedClinicalWorkbench({
       {/* COLUMN 2: PATIENT PROFILE & DEMOGRAPHICS (Matches Reference Style 1:1)   */}
       {/* ========================================================================= */}
       {!patientSummaryCollapsed && (
-        <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto select-none z-10">
+        <aside className="hidden xl:flex w-64 shrink-0 border-r border-slate-200 bg-white flex-col overflow-y-auto select-none z-10">
           {/* Patient Card Header */}
           <div className="p-4 border-b border-slate-100 flex items-center gap-3">
             <img
@@ -698,7 +1126,7 @@ export function UnifiedClinicalWorkbench({
 
       {/* Expand Button if Column 2 is Collapsed */}
       {patientSummaryCollapsed && (
-        <div className="border-r border-slate-200 bg-white p-2 flex flex-col items-center">
+        <div className="hidden xl:flex border-r border-slate-200 bg-white p-2 flex-col items-center">
           <button
             type="button"
             onClick={() => setPatientSummaryCollapsed(false)}
@@ -713,7 +1141,11 @@ export function UnifiedClinicalWorkbench({
       {/* ========================================================================= */}
       {/* COLUMN 3: TABBED CLINICAL WORKSPACE LIST (Matches Reference Style 1:1)    */}
       {/* ========================================================================= */}
-      <section className="w-88 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none">
+      <section
+        className={`${
+          mobileDetailViewOpen ? 'hidden md:flex' : 'flex'
+        } w-full md:w-80 lg:w-88 shrink-0 border-r border-slate-200 bg-white flex-col select-none`}
+      >
         {/* Top Horizontal Clinical Tab Strip */}
         <div className="flex items-center gap-1 overflow-x-auto px-3 py-2 border-b border-slate-100 text-xs scrollbar-none">
           {[
@@ -774,7 +1206,25 @@ export function UnifiedClinicalWorkbench({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Quick Patient Switcher Chip for Tablets (hidden on mobile and >=xl) */}
+            <button
+              type="button"
+              onClick={() => setMobilePatientProfileOpen(true)}
+              className="hidden md:flex xl:hidden items-center gap-1 rounded-full border border-slate-200 bg-slate-100 py-1 px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 transition min-h-[36px]"
+              title="View Patient Demographics & Profile"
+            >
+              <img
+                src={
+                  currentPatient.avatarUrl ||
+                  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&h=160&q=80'
+                }
+                alt={currentPatient.name}
+                className="h-4 w-4 rounded-full object-cover"
+              />
+              <span className="truncate max-w-[70px]">{currentPatient.name.split(' ')[0]}</span>
+              <ChevronDown className="h-3 w-3 text-slate-400" />
+            </button>
             <button
               type="button"
               className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
@@ -800,7 +1250,10 @@ export function UnifiedClinicalWorkbench({
               return (
                 <div
                   key={task.id}
-                  onClick={() => setSelectedTaskId(task.id)}
+                  onClick={() => {
+                    setSelectedTaskId(task.id);
+                    setMobileDetailViewOpen(true);
+                  }}
                   className={`p-3.5 cursor-pointer transition ${
                     isSelected
                       ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
@@ -839,6 +1292,7 @@ export function UnifiedClinicalWorkbench({
             currentPatient.encounters.map((enc) => (
               <div
                 key={enc.id}
+                onClick={() => setMobileDetailViewOpen(true)}
                 className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
               >
                 <div className="flex items-center justify-between">
@@ -858,6 +1312,7 @@ export function UnifiedClinicalWorkbench({
             currentPatient.medications.map((med) => (
               <div
                 key={med.id}
+                onClick={() => setMobileDetailViewOpen(true)}
                 className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
               >
                 <div className="flex items-center justify-between">
@@ -877,6 +1332,7 @@ export function UnifiedClinicalWorkbench({
             currentPatient.labs.map((lab) => (
               <div
                 key={lab.id}
+                onClick={() => setMobileDetailViewOpen(true)}
                 className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
               >
                 <div className="flex items-center justify-between">
@@ -897,7 +1353,10 @@ export function UnifiedClinicalWorkbench({
             ))}
 
           {activeTab === 'Billing' && (
-            <div className="p-3.5 space-y-3">
+            <div
+              onClick={() => setMobileDetailViewOpen(true)}
+              className="p-3.5 space-y-3 cursor-pointer"
+            >
               <div className="rounded border border-slate-200 p-2.5 bg-slate-50">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                   Pending Invoice Total
@@ -926,7 +1385,27 @@ export function UnifiedClinicalWorkbench({
       {/* ========================================================================= */}
       {/* COLUMN 4: DETAIL / ACTION WORKSTATION (Matches Reference Style 1:1)       */}
       {/* ========================================================================= */}
-      <main className="flex-1 bg-white overflow-y-auto flex flex-col p-6 max-w-4xl">
+      <main
+        className={`${
+          mobileDetailViewOpen ? 'flex' : 'hidden md:flex'
+        } flex-1 bg-white overflow-y-auto flex-col p-4 sm:p-6 max-w-4xl`}
+      >
+        {/* Mobile Drill-Down Back Header (< md) */}
+        <div className="md:hidden flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setMobileDetailViewOpen(false)}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-100 min-h-[44px]"
+            aria-label="Back to clinical list"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>← Back to {activeTab}</span>
+          </button>
+          <span className="text-xs font-bold text-slate-900 truncate max-w-[160px]">
+            {activeTask?.title || activeTab}
+          </span>
+        </div>
+
         {activeTask ? (
           <div className="space-y-6">
             {/* Header: Task Title & Action Buttons (Trash & Solid Blue Checkmark) */}
@@ -1039,20 +1518,21 @@ export function UnifiedClinicalWorkbench({
                     rows={3}
                     value={newNoteText}
                     onChange={(e) => setNewNoteText(e.target.value)}
-                    placeholder="Add a note about this Task..."
-                    className="w-full resize-none text-xs text-slate-800 outline-none placeholder:text-slate-400 pr-10"
+                    placeholder="Add a clinical note about this Task..."
+                    className="w-full resize-none text-base sm:text-xs text-slate-800 outline-none placeholder:text-slate-400 pr-12 min-h-[52px]"
                   />
                   <button
                     type="submit"
                     disabled={!newNoteText.trim()}
-                    className={`absolute bottom-3 right-3 flex h-7 w-7 items-center justify-center rounded-full text-white shadow-xs transition ${
+                    className={`absolute bottom-3 right-3 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full text-white shadow-xs transition ${
                       newNoteText.trim()
                         ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                         : 'bg-slate-300 cursor-not-allowed'
                     }`}
                     title="Post note"
+                    aria-label="Post clinical note"
                   >
-                    <PenLine className="h-3.5 w-3.5" />
+                    <PenLine className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                   </button>
                 </div>
               </form>
@@ -1069,16 +1549,17 @@ export function UnifiedClinicalWorkbench({
       {/* MODAL: ADD ALLERGY                                                        */}
       {/* ========================================================================= */}
       {showAddAllergyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4">
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-900">Document Patient Allergy</h3>
               <button
                 type="button"
                 onClick={() => setShowAddAllergyModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
+                aria-label="Close"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={handleSaveAllergy} className="space-y-3">
@@ -1092,7 +1573,7 @@ export function UnifiedClinicalWorkbench({
                   placeholder="e.g. Amoxicillin, Ibuprofen, Shellfish"
                   value={newAllergen}
                   onChange={(e) => setNewAllergen(e.target.value)}
-                  className="w-full rounded border border-slate-300 p-2 text-xs outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
                 />
               </div>
               <div>
@@ -1104,20 +1585,20 @@ export function UnifiedClinicalWorkbench({
                   placeholder="e.g. Facial edema, urticaria, bronchospasm"
                   value={newAllergyReaction}
                   onChange={(e) => setNewAllergyReaction(e.target.value)}
-                  className="w-full rounded border border-slate-300 p-2 text-xs outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddAllergyModal(false)}
-                  className="rounded px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                  className="rounded-lg px-4 py-2.5 text-sm sm:text-xs font-medium text-slate-600 hover:bg-slate-100 min-h-[44px]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm sm:text-xs font-semibold text-white hover:bg-blue-700 min-h-[44px]"
                 >
                   Save Allergy
                 </button>
@@ -1131,16 +1612,17 @@ export function UnifiedClinicalWorkbench({
       {/* MODAL: ADD PROBLEM (ICD-10)                                               */}
       {/* ========================================================================= */}
       {showAddProblemModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4">
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-900">Add Clinical Problem / Diagnosis</h3>
               <button
                 type="button"
                 onClick={() => setShowAddProblemModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
+                aria-label="Close"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={handleSaveProblem} className="space-y-3">
@@ -1154,7 +1636,7 @@ export function UnifiedClinicalWorkbench({
                   placeholder="e.g. Essential Hypertension, Type 2 Diabetes"
                   value={newConditionName}
                   onChange={(e) => setNewConditionName(e.target.value)}
-                  className="w-full rounded border border-slate-300 p-2 text-xs outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
                 />
               </div>
               <div>
@@ -1166,20 +1648,20 @@ export function UnifiedClinicalWorkbench({
                   placeholder="e.g. I10, E11.9, N93.8"
                   value={newIcd10Code}
                   onChange={(e) => setNewIcd10Code(e.target.value)}
-                  className="w-full rounded border border-slate-300 p-2 text-xs font-mono outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs font-mono outline-none focus:border-blue-500 min-h-[44px]"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddProblemModal(false)}
-                  className="rounded px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                  className="rounded-lg px-4 py-2.5 text-sm sm:text-xs font-medium text-slate-600 hover:bg-slate-100 min-h-[44px]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm sm:text-xs font-semibold text-white hover:bg-blue-700 min-h-[44px]"
                 >
                   Save Problem
                 </button>

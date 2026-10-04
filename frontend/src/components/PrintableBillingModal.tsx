@@ -68,33 +68,34 @@ export function PrintableBillingModal({
   const netDue = Math.max(0, (isExempt ? vatExemptBase - statutoryDiscount : grossSubtotal) - philhealthCredit);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:p-0 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 print:p-0 backdrop-blur-xs">
       {/* Modal Card */}
-      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-lg border border-slate-300 bg-white text-slate-900 shadow-2xl print:max-h-none print:w-full print:border-none print:shadow-none">
+      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-t-2xl sm:rounded-lg border border-slate-300 bg-white text-slate-900 shadow-2xl print:max-h-none print:w-full print:border-none print:shadow-none overflow-hidden">
         
         {/* Modal Toolbar (hidden when printing) */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5 print:hidden">
           <div className="flex items-center gap-2">
             <Receipt className="h-4 w-4 text-cyan-800" />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Official Clinic Statement of Account & Billing Slip
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 truncate max-w-[200px] sm:max-w-none">
+              Statement of Account
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => window.print()}
-              className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-100 transition"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-100 transition min-h-[44px]"
             >
               <Printer className="h-3.5 w-3.5 text-slate-600" />
-              <span>Print Statement</span>
+              <span>Print</span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition min-h-[44px] min-w-[44px]"
+              aria-label="Close"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>

@@ -3,7 +3,7 @@
 // SPDX-FileCopyrightText: Copyright Orangebot, Inc. and Medplum contributors
 // SPDX-License-Identifier: Apache-2.0
 import React, { useState } from 'react';
-import { Search, Building2, ChevronDown, Bell, UserPlus, Database, Lock } from 'lucide-react';
+import { Search, Building2, ChevronDown, Bell, UserPlus, Database, Lock, Menu } from 'lucide-react';
 import { CLINIC_BRANCHES, BranchLocation } from '@/lib/ph-constants';
 import { StaffUser, canUserAccessBranch } from '@/lib/user-management-store';
 
@@ -13,6 +13,7 @@ interface TopHeaderProps {
   onOpenSearch: () => void;
   onNewAdmission: () => void;
   currentUser: StaffUser;
+  onOpenMobileMenu?: () => void;
 }
 
 export function TopHeader({
@@ -21,6 +22,7 @@ export function TopHeader({
   onOpenSearch,
   onNewAdmission,
   currentUser,
+  onOpenMobileMenu,
 }: TopHeaderProps) {
   const [branchOpen, setBranchOpen] = useState(false);
 
@@ -32,13 +34,24 @@ export function TopHeader({
   const canSwitchBranches = allowedBranches.length > 1;
 
   return (
-    <header className="sticky top-0 z-40 flex h-11 w-full items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 shadow-2xs">
-      {/* Left: Quick Search trigger button */}
-      <div className="flex items-center gap-2.5 flex-1 max-w-sm">
+    <header className="sticky top-0 z-40 flex h-13 w-full items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 shadow-2xs">
+      {/* Left: Mobile Menu & Quick Search trigger button */}
+      <div className="flex items-center gap-2 flex-1 max-w-sm">
+        {onOpenMobileMenu && (
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            className="md:hidden flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 transition min-h-[44px] min-w-[44px]"
+            title="Open Navigation Menu"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpenSearch}
-          className="flex w-full items-center justify-between rounded border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 transition"
+          className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 transition min-h-[44px]"
         >
           <div className="flex items-center gap-1.5">
             <Search className="h-3 w-3 text-slate-400" />

@@ -83,6 +83,7 @@ export function QueueView({ branch, onOpenPatientChart, onNewAdmission }: QueueV
   const [viewMode, setViewMode] = useState<'KANBAN' | 'TABLE'>('KANBAN');
   const [branchQueues, setBranchQueues] = useState<Record<string, QueuePatientItem[]>>(INITIAL_BRANCH_QUEUES);
   const [filterDoc, setFilterDoc] = useState<string>('ALL');
+  const [mobileStageFilter, setMobileStageFilter] = useState<QueueStage | 'ALL'>('ALL');
 
   // Active queue items for this specific branch only
   const currentQueue = branchQueues[branch.id] || [];
@@ -274,16 +275,52 @@ export function QueueView({ branch, onOpenPatientChart, onNewAdmission }: QueueV
 
       {/* 3. Primary Kanban Board View */}
       {viewMode === 'KANBAN' && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 items-start overflow-x-auto pb-1">
-          {KANBAN_COLUMNS.map((col) => {
-            const colPatients = displayedQueue.filter((p) => p.stage === col.id);
-            const Icon = col.icon;
+        <div className="space-y-2.5">
+          {/* Mobile Stage Filter Tabs (< md) */}
+          <div className="md:hidden flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setMobileStageFilter('ALL')}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold min-h-[38px] transition ${
+                mobileStageFilter === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200'
+              }`}
+            >
+              All ({displayedQueue.length})
+            </button>
+            {KANBAN_COLUMNS.map((col) => {
+              const count = displayedQueue.filter((p) => p.stage === col.id).length;
+              return (
+                <button
+                  key={col.id}
+                  type="button"
+                  onClick={() => setMobileStageFilter(col.id)}
+                  className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold min-h-[38px] transition ${
+                    mobileStageFilter === col.id
+                      ? 'bg-cyan-700 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {col.title.replace(/^\d+\.\s*/, '')} ({count})
+                </button>
+              );
+            })}
+          </div>
 
-            return (
-              <div
-                key={col.id}
-                className={`flex flex-col rounded border border-slate-200 bg-slate-50/80 shadow-2xs border-t-2 ${col.headerBorder} min-h-[190px]`}
-              >
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 items-start overflow-x-auto pb-1">
+            {KANBAN_COLUMNS.map((col) => {
+              const colPatients = displayedQueue.filter((p) => p.stage === col.id);
+              const Icon = col.icon;
+              const isVisibleOnMobile = mobileStageFilter === 'ALL' || mobileStageFilter === col.id;
+
+              return (
+                <div
+                  key={col.id}
+                  className={`${
+                    isVisibleOnMobile ? 'flex' : 'hidden md:flex'
+                  } flex-col rounded border border-slate-200 bg-slate-50/80 shadow-2xs border-t-2 ${col.headerBorder} min-h-[190px]`}
+                >
                 {/* Column Header */}
                 <div className="p-2 border-b border-slate-200 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -427,6 +464,7 @@ export function QueueView({ branch, onOpenPatientChart, onNewAdmission }: QueueV
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
