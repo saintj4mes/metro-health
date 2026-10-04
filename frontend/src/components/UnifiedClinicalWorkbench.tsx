@@ -10,11 +10,33 @@ import {
   PatientAllergy,
   PatientProblem,
   ClinicalTaskNote,
+  PatientMedication,
+  PatientLabOrder,
+  PatientEncounter,
 } from '@/lib/workbench-patient-data';
-import { BranchLocation, calculatePhilippineDiscount, formatPhp } from '@/lib/ph-constants';
-import { StaffUser } from '@/lib/user-management-store';
+import {
+  CLINIC_BRANCHES,
+  BranchLocation,
+  calculatePhilippineDiscount,
+  formatPhp,
+} from '@/lib/ph-constants';
+import {
+  StaffUser,
+  INITIAL_STAFF_USERS,
+  canUserAccessBranch,
+} from '@/lib/user-management-store';
+import {
+  QueueStage,
+  QueuePatientItem,
+  INITIAL_BRANCH_QUEUES,
+} from '@/lib/branch-workspace-store';
+import {
+  ClinicAppointment,
+  INITIAL_APPOINTMENTS,
+} from '@/lib/appointment-store';
 import { PrintableBillingModal, BillingLineItem } from './PrintableBillingModal';
 import { PrintablePrescriptionModal, PrescriptionItem } from './PrintablePrescriptionModal';
+import { CommandSearchModal } from './CommandSearchModal';
 import {
   Search,
   Users,
@@ -49,6 +71,17 @@ import {
   CheckCircle2,
   Menu,
   ArrowLeft,
+  ArrowRight,
+  UserPlus,
+  Receipt,
+  BellRing,
+  Phone,
+  AlertCircle,
+  RefreshCw,
+  Send,
+  UserCheck,
+  Lock,
+  Edit3,
 } from 'lucide-react';
 
 export type WorkbenchTab =
@@ -64,56 +97,118 @@ export type WorkbenchTab =
   | 'Billing'
   | 'Messages';
 
+export type WorkbenchNav =
+  | 'patients'
+  | 'schedule'
+  | 'messages'
+  | 'tasks'
+  | 'spaces'
+  | 'admit'
+  | 'billing'
+  | 'claims'
+  | 'queue';
+
 interface UnifiedClinicalWorkbenchProps {
   currentBranch: BranchLocation;
   currentUser: StaffUser;
-  onNavigateToView?: (view: string) => void;
-  onOpenSearch?: () => void;
+  staffList?: StaffUser[];
+  onSwitchBranch?: (branch: BranchLocation) => void;
+  onSwitchUser?: (user: StaffUser) => void;
   initialPatientId?: string;
   initialTab?: WorkbenchTab;
+  initialNav?: WorkbenchNav;
 }
 
 export function UnifiedClinicalWorkbench({
-  currentBranch,
-  currentUser,
-  onNavigateToView,
-  onOpenSearch,
+  currentBranch: propBranch,
+  currentUser: propUser,
+  staffList = INITIAL_STAFF_USERS,
+  onSwitchBranch,
+  onSwitchUser,
   initialPatientId = 'pat-105',
   initialTab = 'Tasks',
+  initialNav = 'patients',
 }: UnifiedClinicalWorkbenchProps) {
-  // Navigation State
+  // Navigation & Shell State
+  const [activeNav, setActiveNav] = useState<WorkbenchNav>(initialNav);
   const [navCollapsed, setNavCollapsed] = useState<boolean>(false);
   const [patientSummaryCollapsed, setPatientSummaryCollapsed] = useState<boolean>(false);
-  const [activeNav, setActiveNav] = useState<string>('patients');
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+  const [userProfileDropdownOpen, setUserProfileDropdownOpen] = useState<boolean>(false);
 
-  // Mobile Responsive States (Adapts to Mobile Phones & Tablets)
+  // Active Branch & Practitioner
+  const [activeBranch, setActiveBranch] = useState<BranchLocation>(propBranch);
+  const [activeUser, setActiveUser] = useState<StaffUser>(propUser);
+
+  // Mobile Responsive Drawer & Bottom Sheet States
   const [mobileNavDrawerOpen, setMobileNavDrawerOpen] = useState<boolean>(false);
   const [mobilePatientProfileOpen, setMobilePatientProfileOpen] = useState<boolean>(false);
   const [mobileDetailViewOpen, setMobileDetailViewOpen] = useState<boolean>(false);
 
-  // Patients & Active Selection
+  // Patients Data & Selection
   const [patientsList, setPatientsList] = useState<PatientProfileData[]>(WORKBENCH_PATIENTS);
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId);
   const currentPatient =
     patientsList.find((p) => p.id === selectedPatientId) || patientsList[0];
 
-  // Accordion Expand/Collapse States in Column 2
+  // Accordion Expand/Collapse States in Column 2 (Patient Chart)
   const [insuranceOpen, setInsuranceOpen] = useState<boolean>(true);
   const [allergiesOpen, setAllergiesOpen] = useState<boolean>(true);
   const [problemsOpen, setProblemsOpen] = useState<boolean>(true);
 
-  // Column 3 Tabs & Filter States
+  // Column 3 Clinical Tabs & Filter States
   const [activeTab, setActiveTab] = useState<WorkbenchTab>(initialTab);
   const [taskFilter, setTaskFilter] = useState<'MY' | 'ALL'>('MY');
 
-  // Selected Item in Column 3 (Default to first task of active patient)
+  // Selected Items for Column 4
   const [selectedTaskId, setSelectedTaskId] = useState<string>(
     currentPatient.tasks[0]?.id || ''
   );
   const activeTask =
     currentPatient.tasks.find((t) => t.id === selectedTaskId) || currentPatient.tasks[0];
 
-  // Notes Composer State in Column 4
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string>(
+    currentPatient.encounters[0]?.id || ''
+  );
+  const activeEncounter =
+    currentPatient.encounters.find((e) => e.id === selectedEncounterId) ||
+    currentPatient.encounters[0];
+
+  const [selectedMedId, setSelectedMedId] = useState<string>(
+    currentPatient.medications[0]?.id || ''
+  );
+  const activeMed =
+    currentPatient.medications.find((m) => m.id === selectedMedId) ||
+    currentPatient.medications[0];
+
+  const [selectedLabId, setSelectedLabId] = useState<string>(
+    currentPatient.labs[0]?.id || ''
+  );
+  const activeLab =
+    currentPatient.labs.find((l) => l.id === selectedLabId) || currentPatient.labs[0];
+
+  // Queue Data State
+  const [branchQueues, setBranchQueues] = useState<Record<string, QueuePatientItem[]>>(
+    INITIAL_BRANCH_QUEUES
+  );
+  const activeQueueList = branchQueues[activeBranch.id] || branchQueues['branch-espinosa'] || [];
+  const [selectedQueuePatientId, setSelectedQueuePatientId] = useState<string>(
+    activeQueueList[0]?.id || ''
+  );
+  const [queueStageFilter, setQueueStageFilter] = useState<string>('ALL');
+  const activeQueuePatient =
+    activeQueueList.find((q) => q.id === selectedQueuePatientId) || activeQueueList[0];
+
+  // Schedule Appointments State
+  const [appointments, setAppointments] = useState<ClinicAppointment[]>(INITIAL_APPOINTMENTS);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string>(
+    INITIAL_APPOINTMENTS[0]?.id || ''
+  );
+  const [scheduleDoctorFilter, setScheduleDoctorFilter] = useState<string>('ALL');
+  const activeAppointment =
+    appointments.find((a) => a.id === selectedAppointmentId) || appointments[0];
+
+  // Notes Composer State in Column 4 (Tasks)
   const [newNoteText, setNewNoteText] = useState<string>('');
 
   // Modals for Adding Allergy & Problem
@@ -129,7 +224,7 @@ export function UnifiedClinicalWorkbench({
   const [showBillingModal, setShowBillingModal] = useState<boolean>(false);
   const [showRxModal, setShowRxModal] = useState<boolean>(false);
 
-  // Billing Interactive State for Billing Tab
+  // Billing Interactive State
   const [billingPatientType, setBillingPatientType] = useState<'SENIOR' | 'PWD' | 'NONE'>(
     currentPatient.insurance.statutoryType === 'SENIOR'
       ? 'SENIOR'
@@ -140,21 +235,56 @@ export function UnifiedClinicalWorkbench({
   const [tenderAmount, setTenderAmount] = useState<number>(2000);
   const [paymentDone, setPaymentDone] = useState<boolean>(false);
 
-  // Handler to Post a Note in Column 4
+  // Admission Form State
+  const [admitForm, setAdmitForm] = useState({
+    name: '',
+    dob: '1995-05-12',
+    gender: 'Female',
+    civilStatus: 'Single',
+    phone: '+63 917 555 0192',
+    address: 'Brgy. San Jose, Antipolo City, Rizal',
+    philhealth: '12-987654321-0',
+    statutoryId: '',
+    statutoryType: 'REGULAR',
+    chiefComplaint: 'Mild lower abdominal discomfort and scheduled prenatal routine checkup',
+    assignedDoctor: activeUser.name,
+    priority: 'Standard',
+  });
+  const [admissionSuccess, setAdmissionSuccess] = useState<boolean>(false);
+
+  // New Prescription Form State (Meds Tab)
+  const [newRxGeneric, setNewRxGeneric] = useState<string>('Amoxicillin Clavulanate');
+  const [newRxDose, setNewRxDose] = useState<string>('625mg tablet');
+  const [newRxSig, setNewRxSig] = useState<string>('Take 1 tablet every 12 hours after meals for 7 days');
+  const [rxSuccessMessage, setRxSuccessMessage] = useState<string>('');
+
+  // New Lab Order Form State (Labs Tab)
+  const [newLabTestName, setNewLabTestName] = useState<string>('Complete Blood Count (CBC) with Platelet');
+  const [newLabLoinc, setNewLabLoinc] = useState<string>('58410-2');
+  const [labSuccessMessage, setLabSuccessMessage] = useState<string>('');
+
+  // Visits SOAP Form State
+  const [soapSubjective, setSoapSubjective] = useState<string>(activeEncounter?.subjective || '');
+  const [soapObjective, setSoapObjective] = useState<string>(activeEncounter?.objective || '');
+  const [soapAssessment, setSoapAssessment] = useState<string>(activeEncounter?.assessment || '');
+  const [soapPlan, setSoapPlan] = useState<string>(activeEncounter?.plan || '');
+  const [soapSigned, setSoapSigned] = useState<boolean>(false);
+
+  // Handler to Post a Note in Column 4 (Tasks)
   const handleAddNote = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newNoteText.trim() || !activeTask) return;
 
     const newNote: ClinicalTaskNote = {
       id: `n-${Date.now()}`,
-      authorInitials: currentUser.name
+      authorInitials: activeUser.name
         .split(' ')
         .map((n) => n[0])
         .slice(0, 2)
         .join('')
         .toUpperCase(),
-      authorName: currentUser.name,
-      authorRole: currentUser.role === 'MAIN_DOCTOR' ? 'Attending Physician' : 'Clinical Staff',
+      authorName: activeUser.name,
+      authorRole: activeUser.role === 'MAIN_DOCTOR' ? 'Attending Physician' : 'Clinical Staff',
       timestamp: 'Just now',
       content: newNoteText.trim(),
     };
@@ -245,20 +375,265 @@ export function UnifiedClinicalWorkbench({
     setShowAddProblemModal(false);
   };
 
+  // Handler for New Prescription Submission
+  const handleAddPrescription = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRxGeneric.trim()) return;
+
+    const newMed: PatientMedication = {
+      id: `med-${Date.now()}`,
+      genericName: newRxGeneric.trim(),
+      dosage: newRxDose.trim(),
+      instructions: newRxSig.trim(),
+      status: 'ACTIVE',
+      prescribedBy: activeUser.name,
+      datePrescribed: new Date().toISOString().split('T')[0],
+    };
+
+    setPatientsList((prev) =>
+      prev.map((pat) => {
+        if (pat.id !== currentPatient.id) return pat;
+        return { ...pat, medications: [newMed, ...pat.medications] };
+      })
+    );
+
+    setRxSuccessMessage(`e-Prescription issued for ${newRxGeneric} (RA 6675 compliant)`);
+    setTimeout(() => setRxSuccessMessage(''), 4000);
+  };
+
+  // Handler for New Lab Requisition Submission
+  const handleAddLabOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLabTestName.trim()) return;
+
+    const newOrder: PatientLabOrder = {
+      id: `lab-${Date.now()}`,
+      testName: newLabTestName.trim(),
+      loincCode: newLabLoinc.trim() || '58410-2',
+      orderedDate: new Date().toISOString().split('T')[0],
+      status: 'ORDERED',
+      resultsSummary: 'Diagnostic order transmitted to clinical laboratory. Specimen collection pending.',
+    };
+
+    setPatientsList((prev) =>
+      prev.map((pat) => {
+        if (pat.id !== currentPatient.id) return pat;
+        return { ...pat, labs: [newOrder, ...pat.labs] };
+      })
+    );
+
+    setLabSuccessMessage(`Diagnostic order sent for ${newLabTestName}`);
+    setTimeout(() => setLabSuccessMessage(''), 4000);
+  };
+
+  // Handler to Advance Queue Patient
+  const handleAdvanceQueueStage = (patientId: string) => {
+    setBranchQueues((prev) => {
+      const currentList = prev[activeBranch.id] || [];
+      const updated = currentList.map((item) => {
+        if (item.id !== patientId) return item;
+        const nextStage: QueueStage =
+          item.stage === 'CHECKIN'
+            ? 'TRIAGE'
+            : item.stage === 'TRIAGE'
+            ? 'CONSULT'
+            : item.stage === 'CONSULT'
+            ? 'BILLING'
+            : 'DISCHARGED';
+        return { ...item, stage: nextStage };
+      });
+      return { ...prev, [activeBranch.id]: updated };
+    });
+  };
+
+  // Handler to Check-In Appointment to Facility Queue
+  const handleCheckInAppointment = (apt: ClinicAppointment) => {
+    const newQueueItem: QueuePatientItem = {
+      id: apt.patientId,
+      name: apt.patientName,
+      age: apt.patientAge,
+      gender: apt.patientGender,
+      dob: apt.patientDob,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      waitMinutes: '0m',
+      stage: 'TRIAGE',
+      stageLabel: 'Nurse Triage Vitals',
+      doctor: apt.doctorName,
+      priority: apt.seniorId ? 'Senior Priority' : apt.pwdId ? 'PWD Priority' : 'Standard',
+      senior: !!apt.seniorId,
+      pwd: !!apt.pwdId,
+      targetTab: 'vitals',
+      chiefComplaint: apt.chiefComplaint,
+      branchId: activeBranch.id,
+    };
+
+    setBranchQueues((prev) => ({
+      ...prev,
+      [activeBranch.id]: [newQueueItem, ...(prev[activeBranch.id] || [])],
+    }));
+
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === apt.id ? { ...a, status: 'CHECKED_IN' } : a))
+    );
+
+    setActiveNav('queue');
+    setSelectedQueuePatientId(apt.patientId);
+  };
+
+  // Handler for New Patient Admission Submit
+  const handleAdmitSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!admitForm.name.trim()) return;
+
+    const newPatId = `pat-${Date.now()}`;
+    const newPatProfile: PatientProfileData = {
+      id: newPatId,
+      name: admitForm.name,
+      dob: admitForm.dob,
+      age: `${new Date().getFullYear() - parseInt(admitForm.dob.split('-')[0])}Y`,
+      gender: admitForm.gender as 'Female' | 'Male' | 'Other',
+      race: 'Filipino / Asian',
+      address: admitForm.address,
+      city: 'Metro Manila',
+      province: 'NCR',
+      language: 'Tagalog, English',
+      primaryClinician: admitForm.assignedDoctor,
+      insurance: {
+        provider: 'PhilHealth Konsulta',
+        policyId: admitForm.philhealth || '12-000000000-0',
+        status: 'ACTIVE',
+        validUntil: '12/31/2026',
+        konsultaAccredited: true,
+        statutoryType: admitForm.statutoryType as 'SENIOR' | 'PWD' | 'REGULAR',
+        statutoryId: admitForm.statutoryId,
+      },
+      allergies: [],
+      problems: [
+        {
+          id: `p-${Date.now()}`,
+          condition: admitForm.chiefComplaint,
+          icd10: 'R69',
+          status: 'ACTIVE',
+          onsetDate: new Date().toISOString().split('T')[0],
+        },
+      ],
+      tasks: [
+        {
+          id: `t-${Date.now()}`,
+          title: 'Initial triage & vital signs assessment',
+          dueDate: 'Today',
+          assignedTo: 'Nurse Joy Reyes, RN',
+          status: 'In Progress',
+          category: 'TRIAGE',
+          description: `Patient admitted with chief complaint: ${admitForm.chiefComplaint}`,
+          notes: [],
+        },
+      ],
+      medications: [],
+      labs: [],
+      encounters: [],
+    };
+
+    setPatientsList((prev) => [newPatProfile, ...prev]);
+
+    // Also push into facility queue directly
+    const newQueueItem: QueuePatientItem = {
+      id: newPatId,
+      name: admitForm.name,
+      age: parseInt(newPatProfile.age),
+      gender: admitForm.gender === 'Female' ? 'F' : 'M',
+      dob: admitForm.dob,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      waitMinutes: '1m',
+      stage: 'TRIAGE',
+      stageLabel: 'Nurse Triage Vitals',
+      doctor: admitForm.assignedDoctor,
+      priority:
+        admitForm.statutoryType === 'SENIOR'
+          ? 'Senior Priority'
+          : admitForm.statutoryType === 'PWD'
+          ? 'PWD Priority'
+          : 'Standard',
+      senior: admitForm.statutoryType === 'SENIOR',
+      pwd: admitForm.statutoryType === 'PWD',
+      targetTab: 'vitals',
+      chiefComplaint: admitForm.chiefComplaint,
+      branchId: activeBranch.id,
+    };
+
+    setBranchQueues((prev) => ({
+      ...prev,
+      [activeBranch.id]: [newQueueItem, ...(prev[activeBranch.id] || [])],
+    }));
+
+    setAdmissionSuccess(true);
+    setTimeout(() => {
+      setAdmissionSuccess(false);
+      setSelectedPatientId(newPatId);
+      setActiveNav('patients');
+    }, 1500);
+  };
+
   // Billing Calculations
   const sampleBillingItems: BillingLineItem[] = [
-    { id: '1', description: 'Obstetrics & Gynecology Specialist Consultation', category: 'Consultation', qty: 1, unitPrice: 1000, amount: 1000 },
-    { id: '2', description: 'Pelvic & Transvaginal Diagnostic Ultrasound', category: 'Diagnostic / Lab', qty: 1, unitPrice: 1200, amount: 1200 },
-    { id: '3', description: 'Prescribed Oral Antibiotics & Prenatal Vitamins Course', category: 'Pharmacy', qty: 1, unitPrice: 850, amount: 850 },
+    {
+      id: '1',
+      description: 'Obstetrics & Gynecology Specialist Consultation',
+      category: 'Consultation',
+      qty: 1,
+      unitPrice: 1000,
+      amount: 1000,
+    },
+    {
+      id: '2',
+      description: 'Pelvic & Transvaginal Diagnostic Ultrasound',
+      category: 'Diagnostic / Lab',
+      qty: 1,
+      unitPrice: 1200,
+      amount: 1200,
+    },
+    {
+      id: '3',
+      description: 'Prescribed Oral Antibiotics & Prenatal Vitamins Course',
+      category: 'Pharmacy',
+      qty: 1,
+      unitPrice: 850,
+      amount: 850,
+    },
   ];
   const grossBilling = sampleBillingItems.reduce((acc, item) => acc + item.amount, 0);
   const discountCalc = calculatePhilippineDiscount(grossBilling, billingPatientType, true);
   const philHealthCredit = currentPatient.insurance.konsultaAccredited ? 500 : 0;
   const netBillingPayable = Math.max(0, discountCalc.netPayablePhp - philHealthCredit);
 
+  // Switch Practitioner Persona
+  const handleSelectUser = (user: StaffUser) => {
+    setActiveUser(user);
+    onSwitchUser?.(user);
+    setUserProfileDropdownOpen(false);
+
+    if (!canUserAccessBranch(user, activeBranch.id)) {
+      const allowed = CLINIC_BRANCHES.filter((b) => canUserAccessBranch(user, b.id));
+      if (allowed.length > 0) {
+        setActiveBranch(allowed[0]);
+        onSwitchBranch?.(allowed[0]);
+      }
+    }
+  };
+
+  // Switch Active Clinic Branch
+  const handleSelectBranch = (branch: BranchLocation) => {
+    if (canUserAccessBranch(activeUser, branch.id)) {
+      setActiveBranch(branch);
+      onSwitchBranch?.(branch);
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-white font-sans text-slate-900 antialiased selection:bg-blue-100">
-      {/* Mobile Top App Bar (< md) */}
+      {/* ========================================================================= */}
+      {/* MOBILE STICKY TOP APP BAR (< md)                                          */}
+      {/* ========================================================================= */}
       <header className="md:hidden flex h-14 items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-30">
         <div className="flex items-center gap-2">
           <button
@@ -303,9 +678,9 @@ export function UnifiedClinicalWorkbench({
           </button>
           <button
             type="button"
-            onClick={onOpenSearch}
+            onClick={() => setSearchOpen(true)}
             className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition min-h-[44px] min-w-[44px]"
-            title="Search Records"
+            title="Search Records (⌘K)"
             aria-label="Search Records"
           >
             <Search className="h-4 w-4" />
@@ -313,7 +688,9 @@ export function UnifiedClinicalWorkbench({
         </div>
       </header>
 
-      {/* Mobile Off-Canvas Nav Drawer (< md) */}
+      {/* ========================================================================= */}
+      {/* MOBILE OFF-CANVAS NAV DRAWER (< md)                                       */}
+      {/* ========================================================================= */}
       {mobileNavDrawerOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <div
@@ -321,7 +698,6 @@ export function UnifiedClinicalWorkbench({
             onClick={() => setMobileNavDrawerOpen(false)}
           />
           <div className="relative flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl z-10 animate-in slide-in-from-left duration-200">
-            {/* Drawer Header */}
             <div className="flex h-14 items-center justify-between px-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-bold text-sm">
@@ -342,160 +718,72 @@ export function UnifiedClinicalWorkbench({
               </button>
             </div>
 
-            {/* Practitioner & Branch Card */}
             <div className="p-3 border-b border-slate-100 bg-slate-50">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-purple-700 font-bold text-xs">
-                  {currentUser.name
+                  {activeUser.name
                     .split(' ')
                     .map((n) => n[0])
                     .slice(0, 2)
                     .join('')}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</div>
-                  <div className="text-[10px] text-purple-700 font-medium truncate">{currentBranch.name}</div>
+                  <div className="text-xs font-bold text-slate-900 truncate">{activeUser.name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{activeBranch.name}</div>
                 </div>
               </div>
             </div>
 
-            {/* Nav Links */}
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  onOpenSearch?.();
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <Search className="h-4 w-4 text-slate-500" />
-                <span>Search Records (⌘K)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  setActiveNav('patients');
-                  onNavigateToView?.('chart');
-                }}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium min-h-[44px] ${
-                  activeNav === 'patients' ? 'bg-sky-50 text-sky-700 font-bold' : 'text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <Users className="h-4 w-4 text-sky-600" />
-                <span>Patients (Active Chart)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  setActiveNav('schedule');
-                  onNavigateToView?.('schedule');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <Calendar className="h-4 w-4 text-slate-500" />
-                <span>Schedule & Appointments</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  setActiveNav('messages');
-                  setActiveTab('Messages');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <Mail className="h-4 w-4 text-slate-500" />
-                <span>Clinical Messages</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  setActiveNav('tasks');
-                  setActiveTab('Tasks');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <ClipboardCheck className="h-4 w-4 text-slate-500" />
-                <span>Tasks & Orders</span>
-              </button>
-
-              <div className="pt-3 pb-1 border-t border-slate-100">
-                <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Quick Actions
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  onNavigateToView?.('admit');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <Plus className="h-4 w-4 text-slate-500" />
-                <span>New Patient Admission</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  setActiveTab('Billing');
-                  setActiveNav('billing');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <CreditCard className="h-4 w-4 text-slate-500" />
-                <span>Billing & Official Receipts</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  onNavigateToView?.('claims');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <ShieldCheck className="h-4 w-4 text-slate-500" />
-                <span>PhilHealth eClaims</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileNavDrawerOpen(false);
-                  onNavigateToView?.('queue');
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100 min-h-[44px]"
-              >
-                <FolderKanban className="h-4 w-4 text-slate-500" />
-                <span>Facility Patient Queue</span>
-              </button>
+              {[
+                { id: 'patients', label: 'Patients', icon: Users },
+                { id: 'schedule', label: 'Schedule', icon: Calendar },
+                { id: 'queue', label: 'Facility Queue', icon: FolderKanban },
+                { id: 'billing', label: 'Billing & Ledger', icon: CreditCard },
+                { id: 'claims', label: 'PhilHealth Claims', icon: ShieldCheck },
+                { id: 'spaces', label: 'Spaces / Branches', icon: Layers },
+                { id: 'admit', label: '+ New Patient Admission', icon: Plus },
+                { id: 'tasks', label: 'Clinical Tasks', icon: ClipboardCheck },
+                { id: 'messages', label: 'Team Messages', icon: Mail },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isItemActive = activeNav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveNav(item.id as WorkbenchNav);
+                      setMobileNavDrawerOpen(false);
+                      setMobileDetailViewOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition min-h-[44px] ${
+                      isItemActive
+                        ? 'bg-sky-50 text-sky-700 border border-sky-100'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-slate-500" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
 
-      {/* Mobile & Tablet Patient Demographics & Profile Bottom Sheet (< xl) */}
+      {/* ========================================================================= */}
+      {/* MOBILE PATIENT PROFILE BOTTOM SHEET (< md & Tablet)                       */}
+      {/* ========================================================================= */}
       {mobilePatientProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center xl:hidden">
+        <div className="fixed inset-0 z-50 flex items-end xl:hidden">
           <div
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
             onClick={() => setMobilePatientProfileOpen(false)}
           />
-          <div className="relative flex max-h-[90vh] w-full sm:max-w-lg flex-col rounded-t-2xl sm:rounded-lg bg-white shadow-2xl z-10 overflow-hidden">
-            {/* Sheet Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white">
+          <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <img
                   src={
@@ -522,9 +810,7 @@ export function UnifiedClinicalWorkbench({
               </button>
             </div>
 
-            {/* Scrollable Patient Information Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Quick Switcher */}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
                   Switch Active Patient Record
@@ -546,7 +832,6 @@ export function UnifiedClinicalWorkbench({
                 </select>
               </div>
 
-              {/* Demographics List */}
               <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 space-y-2 text-xs text-slate-700">
                 <div className="flex items-center gap-2.5">
                   <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
@@ -570,7 +855,7 @@ export function UnifiedClinicalWorkbench({
                 </div>
               </div>
 
-              {/* Insurance & PhilHealth */}
+              {/* Insurance */}
               <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900">Insurance & PhilHealth</span>
@@ -591,7 +876,7 @@ export function UnifiedClinicalWorkbench({
                 )}
               </div>
 
-              {/* Allergies Accordion with + Button */}
+              {/* Allergies */}
               <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900">Documented Allergies</span>
@@ -621,7 +906,7 @@ export function UnifiedClinicalWorkbench({
                 )}
               </div>
 
-              {/* Problems Accordion with + Button */}
+              {/* Problems */}
               <div className="rounded-lg border border-slate-200 p-3 text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900">Clinical Problems (ICD-10)</span>
@@ -655,7 +940,6 @@ export function UnifiedClinicalWorkbench({
               </div>
             </div>
 
-            {/* Bottom Done Button */}
             <div className="p-3 border-t border-slate-100 bg-slate-50">
               <button
                 type="button"
@@ -670,7 +954,7 @@ export function UnifiedClinicalWorkbench({
       )}
 
       {/* ========================================================================= */}
-      {/* COLUMN 1: LEFT NAVIGATION SIDEBAR (Desktop & Tablet)                      */}
+      {/* COLUMN 1: LEFT NAVIGATION RAIL (Desktop & Tablet)                         */}
       {/* ========================================================================= */}
       <aside
         className={`hidden md:flex flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out ${
@@ -699,7 +983,7 @@ export function UnifiedClinicalWorkbench({
           {/* Quick Search Item */}
           <button
             type="button"
-            onClick={onOpenSearch}
+            onClick={() => setSearchOpen(true)}
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
             title="Search (⌘K)"
           >
@@ -717,13 +1001,16 @@ export function UnifiedClinicalWorkbench({
           {/* Spaces */}
           <button
             type="button"
-            onClick={() => onNavigateToView?.('branches')}
+            onClick={() => {
+              setActiveNav('spaces');
+              setMobileDetailViewOpen(false);
+            }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'spaces'
                 ? 'bg-sky-50 text-sky-700 font-semibold'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
-            title="Spaces"
+            title="Spaces / Clinics"
           >
             <Layers className="h-4 w-4 shrink-0 text-slate-500" />
             {!navCollapsed && <span className="hidden xl:inline">Spaces</span>}
@@ -734,7 +1021,7 @@ export function UnifiedClinicalWorkbench({
             type="button"
             onClick={() => {
               setActiveNav('patients');
-              onNavigateToView?.('chart');
+              setMobileDetailViewOpen(false);
             }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'patients'
@@ -752,7 +1039,7 @@ export function UnifiedClinicalWorkbench({
             type="button"
             onClick={() => {
               setActiveNav('schedule');
-              onNavigateToView?.('schedule');
+              setMobileDetailViewOpen(false);
             }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'schedule'
@@ -771,6 +1058,7 @@ export function UnifiedClinicalWorkbench({
             onClick={() => {
               setActiveNav('messages');
               setActiveTab('Messages');
+              setMobileDetailViewOpen(false);
             }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'messages'
@@ -789,6 +1077,7 @@ export function UnifiedClinicalWorkbench({
             onClick={() => {
               setActiveNav('tasks');
               setActiveTab('Tasks');
+              setMobileDetailViewOpen(false);
             }}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
               activeNav === 'tasks'
@@ -810,12 +1099,19 @@ export function UnifiedClinicalWorkbench({
             )}
           </div>
 
-          {/* Get Started / New Patient */}
+          {/* + New Patient Admission */}
           <button
             type="button"
-            onClick={() => onNavigateToView?.('admit')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
-            title="New Patient"
+            onClick={() => {
+              setActiveNav('admit');
+              setMobileDetailViewOpen(false);
+            }}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+              activeNav === 'admit'
+                ? 'bg-sky-50 text-sky-700 font-semibold'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+            title="New Patient Admission"
           >
             <Plus className="h-4 w-4 shrink-0 text-slate-500" />
             {!navCollapsed && <span className="hidden xl:inline">New Patient</span>}
@@ -825,10 +1121,15 @@ export function UnifiedClinicalWorkbench({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('Billing');
               setActiveNav('billing');
+              setActiveTab('Billing');
+              setMobileDetailViewOpen(false);
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+              activeNav === 'billing'
+                ? 'bg-sky-50 text-sky-700 font-semibold'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
             title="Billing & Ledger"
           >
             <CreditCard className="h-4 w-4 shrink-0 text-slate-500" />
@@ -838,19 +1139,33 @@ export function UnifiedClinicalWorkbench({
           {/* PhilHealth eClaims */}
           <button
             type="button"
-            onClick={() => onNavigateToView?.('claims')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            onClick={() => {
+              setActiveNav('claims');
+              setMobileDetailViewOpen(false);
+            }}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+              activeNav === 'claims'
+                ? 'bg-sky-50 text-sky-700 font-semibold'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
             title="PhilHealth Claims"
           >
             <ShieldCheck className="h-4 w-4 shrink-0 text-slate-500" />
             {!navCollapsed && <span className="hidden xl:inline">PhilHealth Claims</span>}
           </button>
 
-          {/* Today's Queue */}
+          {/* Facility Queue */}
           <button
             type="button"
-            onClick={() => onNavigateToView?.('queue')}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+            onClick={() => {
+              setActiveNav('queue');
+              setMobileDetailViewOpen(false);
+            }}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+              activeNav === 'queue'
+                ? 'bg-sky-50 text-sky-700 font-semibold'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
             title="Facility Queue"
           >
             <FolderKanban className="h-4 w-4 shrink-0 text-slate-500" />
@@ -858,28 +1173,33 @@ export function UnifiedClinicalWorkbench({
           </button>
         </div>
 
-        {/* Bottom Doctor Profile & Collapse Toggle */}
-        <div className="border-t border-slate-200 p-2.5 bg-slate-50/50">
+        {/* Bottom Doctor Profile & Popover Switcher */}
+        <div className="relative border-t border-slate-200 p-2.5 bg-slate-50/50">
           <div className="flex items-center justify-between">
-            {!navCollapsed && (
-              <div className="hidden xl:flex min-w-0 items-center gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
-                  {currentUser.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .slice(0, 2)
-                    .join('')}
-                </div>
-                <div className="truncate">
+            <button
+              type="button"
+              onClick={() => setUserProfileDropdownOpen(!userProfileDropdownOpen)}
+              className="flex items-center gap-2 text-left hover:opacity-80 transition min-w-0"
+              title="Click to Switch Doctor Persona or Branch"
+            >
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                {activeUser.name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')}
+              </div>
+              {!navCollapsed && (
+                <div className="hidden xl:block min-w-0 truncate">
                   <span className="block text-xs font-semibold text-slate-800 truncate">
-                    {currentUser.name}
+                    {activeUser.name}
                   </span>
                   <span className="block text-[10px] text-slate-400 truncate">
-                    {currentBranch.name}
+                    {activeBranch.code} &bull; {activeUser.role === 'MAIN_DOCTOR' ? 'Director' : 'Staff'}
                   </span>
                 </div>
-              </div>
-            )}
+              )}
+            </button>
             <button
               type="button"
               onClick={() => setNavCollapsed(!navCollapsed)}
@@ -889,238 +1209,453 @@ export function UnifiedClinicalWorkbench({
               {navCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           </div>
+
+          {/* Interactive Persona & Branch Switcher Dropdown */}
+          {userProfileDropdownOpen && (
+            <div className="absolute bottom-14 left-2 z-50 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl space-y-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Switch Active Persona
+                </span>
+                <div className="space-y-1">
+                  {staffList.map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => handleSelectUser(user)}
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition ${
+                        activeUser.id === user.id
+                          ? 'bg-purple-50 font-bold text-purple-800'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="text-left">
+                        <div className="truncate font-semibold">{user.name}</div>
+                        <div className="text-[10px] text-slate-400">{user.role}</div>
+                      </div>
+                      {activeUser.id === user.id && <Check className="h-3.5 w-3.5 text-purple-700" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Switch Facility Branch
+                </span>
+                <div className="space-y-1">
+                  {CLINIC_BRANCHES.map((b) => {
+                    const permitted = canUserAccessBranch(activeUser, b.id);
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        disabled={!permitted}
+                        onClick={() => handleSelectBranch(b)}
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition ${
+                          activeBranch.id === b.id
+                            ? 'bg-blue-50 font-bold text-blue-800'
+                            : permitted
+                            ? 'text-slate-700 hover:bg-slate-50'
+                            : 'opacity-40 cursor-not-allowed text-slate-400'
+                        }`}
+                      >
+                        <div className="text-left truncate">
+                          <div className="truncate">{b.name}</div>
+                          <div className="text-[10px] text-slate-400">{b.code}</div>
+                        </div>
+                        {activeBranch.id === b.id && <Check className="h-3.5 w-3.5 text-blue-700" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* ========================================================================= */}
-      {/* COLUMN 2: PATIENT PROFILE & DEMOGRAPHICS (Matches Reference Style 1:1)   */}
+      {/* COLUMN 2: CONTEXT PROFILE PANEL (Patient / Module Context)                */}
       {/* ========================================================================= */}
       {!patientSummaryCollapsed && (
         <aside className="hidden xl:flex w-64 shrink-0 border-r border-slate-200 bg-white flex-col overflow-y-auto select-none z-10">
-          {/* Patient Card Header */}
-          <div className="p-4 border-b border-slate-100 flex items-center gap-3">
-            <img
-              src={
-                currentPatient.avatarUrl ||
-                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&h=160&q=80'
-              }
-              alt={currentPatient.name}
-              className="h-11 w-11 rounded-full object-cover border border-slate-200 shadow-2xs"
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 truncate leading-tight">
-                  {currentPatient.name}
-                </h3>
+          {/* Patient Context Header (Patients, Tasks, Messages, Billing) */}
+          {(activeNav === 'patients' || activeNav === 'tasks' || activeNav === 'messages' || activeNav === 'billing') ? (
+            <>
+              {/* Patient Card Header */}
+              <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+                <img
+                  src={
+                    currentPatient.avatarUrl ||
+                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&h=160&q=80'
+                  }
+                  alt={currentPatient.name}
+                  className="h-11 w-11 rounded-full object-cover border border-slate-200 shadow-2xs"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 truncate leading-tight">
+                      {currentPatient.name}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setPatientSummaryCollapsed(true)}
+                      className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      title="Collapse patient summary"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    {currentPatient.dob}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Patient Switcher Selector */}
+              <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50/60">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Active Patient Record
+                </label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => {
+                    setSelectedPatientId(e.target.value);
+                    const nextPat = patientsList.find((p) => p.id === e.target.value);
+                    if (nextPat?.tasks[0]) setSelectedTaskId(nextPat.tasks[0].id);
+                  }}
+                  className="w-full rounded border border-slate-200 bg-white py-1 px-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500"
+                >
+                  {patientsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.age} • {p.gender})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Demographics Icon List (Exact match to reference screenshot) */}
+              <div className="p-3.5 space-y-2 border-b border-slate-100 text-xs text-slate-700">
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>
+                    {currentPatient.dob} ({currentPatient.age})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>{currentPatient.gender}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>{currentPatient.race}</span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span className="leading-tight">
+                    {currentPatient.address}, {currentPatient.city}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Languages className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span>{currentPatient.language}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Stethoscope className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span className="font-medium text-slate-900">{currentPatient.primaryClinician}</span>
+                </div>
+              </div>
+
+              {/* Accordion 1: Insurance & PhilHealth */}
+              <div className="border-b border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setPatientSummaryCollapsed(true)}
-                  className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  title="Collapse patient summary"
+                  onClick={() => setInsuranceOpen(!insuranceOpen)}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-900 hover:bg-slate-50 transition"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <div className="flex items-center gap-1.5">
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                        insuranceOpen ? '' : '-rotate-90'
+                      }`}
+                    />
+                    <span>Insurance</span>
+                  </div>
                 </button>
-              </div>
-              <span className="text-xs text-slate-400 font-mono">
-                {currentPatient.dob}
-              </span>
-            </div>
-          </div>
-
-          {/* Quick Patient Switcher Selector (Philippine Metro Health patients) */}
-          <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50/60">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Active Patient Record
-            </label>
-            <select
-              value={selectedPatientId}
-              onChange={(e) => {
-                setSelectedPatientId(e.target.value);
-                const nextPat = patientsList.find((p) => p.id === e.target.value);
-                if (nextPat?.tasks[0]) setSelectedTaskId(nextPat.tasks[0].id);
-              }}
-              className="w-full rounded border border-slate-200 bg-white py-1 px-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500"
-            >
-              {patientsList.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.age} • {p.gender})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Demographics Icon List (Exact match to screenshot) */}
-          <div className="p-3.5 space-y-2 border-b border-slate-100 text-xs text-slate-700">
-            <div className="flex items-center gap-2.5">
-              <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>
-                {currentPatient.dob} ({currentPatient.age})
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>{currentPatient.gender}</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>{currentPatient.race}</span>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
-              <span className="leading-tight">
-                {currentPatient.address}, {currentPatient.city}
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Languages className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span>{currentPatient.language}</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Stethoscope className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="font-medium text-slate-900">{currentPatient.primaryClinician}</span>
-            </div>
-          </div>
-
-          {/* Accordion 1: Insurance & PhilHealth */}
-          <div className="border-b border-slate-100">
-            <button
-              type="button"
-              onClick={() => setInsuranceOpen(!insuranceOpen)}
-              className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-bold text-slate-900 hover:bg-slate-50 transition"
-            >
-              <div className="flex items-center gap-1.5">
-                <ChevronDown
-                  className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                    insuranceOpen ? '' : '-rotate-90'
-                  }`}
-                />
-                <span>Insurance</span>
-              </div>
-            </button>
-            {insuranceOpen && (
-              <div className="px-3.5 pb-3 text-xs space-y-1.5">
-                <div className="font-semibold text-slate-800">
-                  {currentPatient.insurance.provider}
-                </div>
-                <div className="text-[11px] font-mono text-slate-500">
-                  ID: {currentPatient.insurance.policyId}
-                  {currentPatient.insurance.groupNumber && (
-                    <> &bull; Group: {currentPatient.insurance.groupNumber}</>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 pt-0.5">
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
-                    ACTIVE
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    Ends {currentPatient.insurance.validUntil}
-                  </span>
-                </div>
-                {currentPatient.insurance.statutoryId && (
-                  <div className="pt-1">
-                    <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold font-mono text-amber-800 border border-amber-200">
-                      OSCA ID: {currentPatient.insurance.statutoryId} (RA 9994)
-                    </span>
+                {insuranceOpen && (
+                  <div className="px-3.5 pb-3 text-xs space-y-1.5">
+                    <div className="font-semibold text-slate-800">
+                      {currentPatient.insurance.provider}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-500">
+                      ID: {currentPatient.insurance.policyId}
+                      {currentPatient.insurance.groupNumber && (
+                        <> &bull; Group: {currentPatient.insurance.groupNumber}</>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                        ACTIVE
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Ends {currentPatient.insurance.validUntil}
+                      </span>
+                    </div>
+                    {currentPatient.insurance.statutoryId && (
+                      <div className="pt-1">
+                        <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold font-mono text-amber-800 border border-amber-200">
+                          OSCA ID: {currentPatient.insurance.statutoryId} (RA 9994)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Accordion 2: Allergies */}
-          <div className="border-b border-slate-100">
-            <div className="flex items-center justify-between px-3.5 py-2.5">
-              <button
-                type="button"
-                onClick={() => setAllergiesOpen(!allergiesOpen)}
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-900 hover:text-blue-600"
-              >
-                <ChevronDown
-                  className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                    allergiesOpen ? '' : '-rotate-90'
-                  }`}
-                />
-                <span>Allergies</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAddAllergyModal(true)}
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition"
-                title="Add Allergy"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {allergiesOpen && (
-              <div className="px-3.5 pb-3 space-y-2 text-xs">
-                {currentPatient.allergies.length === 0 ? (
-                  <span className="text-[11px] text-slate-400 italic">No allergies documented</span>
-                ) : (
-                  currentPatient.allergies.map((alg) => (
-                    <div key={alg.id} className="space-y-0.5">
-                      <div className="font-semibold text-slate-800">{alg.substance}</div>
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.2 text-[9px] font-bold border ${
-                          alg.status === 'ACTIVE'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        {alg.status}
-                      </span>
-                    </div>
-                  ))
+              {/* Accordion 2: Allergies */}
+              <div className="border-b border-slate-100">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setAllergiesOpen(!allergiesOpen)}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-900 hover:text-blue-600"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                        allergiesOpen ? '' : '-rotate-90'
+                      }`}
+                    />
+                    <span>Allergies</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAllergyModal(true)}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition"
+                    title="Add Allergy"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {allergiesOpen && (
+                  <div className="px-3.5 pb-3 space-y-2 text-xs">
+                    {currentPatient.allergies.length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic">No allergies documented</span>
+                    ) : (
+                      currentPatient.allergies.map((alg) => (
+                        <div key={alg.id} className="space-y-0.5">
+                          <div className="font-semibold text-slate-800">{alg.substance}</div>
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.2 text-[9px] font-bold border ${
+                              alg.status === 'ACTIVE'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {alg.status}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Accordion 3: Problems */}
-          <div className="border-b border-slate-100">
-            <div className="flex items-center justify-between px-3.5 py-2.5">
-              <button
-                type="button"
-                onClick={() => setProblemsOpen(!problemsOpen)}
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-900 hover:text-blue-600"
-              >
-                <ChevronDown
-                  className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                    problemsOpen ? '' : '-rotate-90'
-                  }`}
-                />
-                <span>Problems</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAddProblemModal(true)}
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition"
-                title="Add Problem"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {problemsOpen && (
-              <div className="px-3.5 pb-3 space-y-2 text-xs">
-                {currentPatient.problems.length === 0 ? (
-                  <span className="text-[11px] text-slate-400 italic">No active problems</span>
-                ) : (
-                  currentPatient.problems.map((prob) => (
-                    <div key={prob.id} className="space-y-0.5">
-                      <div className="font-semibold text-slate-800">{prob.condition}</div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
-                          {prob.status}
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-400">
-                          ICD-10: {prob.icd10}
-                        </span>
-                      </div>
-                    </div>
-                  ))
+              {/* Accordion 3: Problems */}
+              <div className="border-b border-slate-100">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setProblemsOpen(!problemsOpen)}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-900 hover:text-blue-600"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                        problemsOpen ? '' : '-rotate-90'
+                      }`}
+                    />
+                    <span>Problems</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProblemModal(true)}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition"
+                    title="Add Problem"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {problemsOpen && (
+                  <div className="px-3.5 pb-3 space-y-2 text-xs">
+                    {currentPatient.problems.length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic">No active problems</span>
+                    ) : (
+                      currentPatient.problems.map((prob) => (
+                        <div key={prob.id} className="space-y-0.5">
+                          <div className="font-semibold text-slate-800">{prob.condition}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                              {prob.status}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              ICD-10: {prob.icd10}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </>
+          ) : activeNav === 'queue' ? (
+            /* Queue Metrics Context Panel */
+            <div className="p-4 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Facility Queue Stats
+                </h3>
+                <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Dispatch
+                </span>
+              </div>
+              <div className="text-xs text-slate-600 font-semibold">{activeBranch.name}</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg border border-slate-200 p-2.5 bg-slate-50 text-center">
+                  <span className="text-[10px] text-slate-400 block font-bold">TOTAL QUEUED</span>
+                  <span className="text-xl font-black text-slate-900">{activeQueueList.length}</span>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2.5 bg-slate-50 text-center">
+                  <span className="text-[10px] text-slate-400 block font-bold">AVG WAIT</span>
+                  <span className="text-xl font-black text-slate-900">14m</span>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-xs space-y-1 text-amber-900">
+                <span className="font-bold flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-700" />
+                  Philippine Priority Lane
+                </span>
+                <p className="text-[11px] leading-tight text-amber-800">
+                  Mandatory priority express triage for Senior Citizens (RA 9994) & PWDs (RA 7277).
+                </p>
+              </div>
+            </div>
+          ) : activeNav === 'schedule' ? (
+            /* Schedule Mini-Calendar Context Panel */
+            <div className="p-4 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Appointments Book
+                </h3>
+                <span className="text-[10px] font-mono text-slate-400">Oct 2026</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2.5 bg-slate-50 text-center space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Active Demo Date
+                </span>
+                <div className="text-sm font-black text-slate-900">Monday, Oct 05, 2026</div>
+                <div className="text-[11px] text-slate-500">12 Patients Scheduled</div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Filter by Attending Doctor
+                </label>
+                <select
+                  value={scheduleDoctorFilter}
+                  onChange={(e) => setScheduleDoctorFilter(e.target.value)}
+                  className="w-full rounded border border-slate-200 bg-white p-2 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500"
+                >
+                  <option value="ALL">All Attending Doctors</option>
+                  <option value="Dr. Florence Espinosa, MD">Dr. Florence Espinosa, MD</option>
+                  <option value="Dr. Juan Carlos Ramos, MD">Dr. Juan Carlos Ramos, MD</option>
+                </select>
+              </div>
+            </div>
+          ) : activeNav === 'spaces' ? (
+            /* Spaces / Branches Context Panel */
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Clinic Network
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {CLINIC_BRANCHES.map((b) => (
+                  <div
+                    key={b.id}
+                    onClick={() => handleSelectBranch(b)}
+                    className={`p-3 rounded-lg border cursor-pointer transition ${
+                      activeBranch.id === b.id
+                        ? 'border-blue-500 bg-blue-50/50'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-slate-900">{b.name}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{b.address.city}</div>
+                    <div className="mt-1 text-[9px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded inline-block">
+                      Konsulta Accredited
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : activeNav === 'admit' ? (
+            /* Admission Checklist Context Panel */
+            <div className="p-4 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Admission Intake
+                </h3>
+              </div>
+              <div className="space-y-3 text-xs">
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px]">
+                    1
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-900 block">Personal Demographics</span>
+                    <span className="text-[11px] text-slate-500">Civil status, address, contacts</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px]">
+                    2
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-900 block">PhilHealth & IDs</span>
+                    <span className="text-[11px] text-slate-500">12-digit PIN, Senior / PWD card</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px]">
+                    3
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-900 block">Triage Queue Dispatch</span>
+                    <span className="text-[11px] text-slate-500">Push to Nurse Station</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* PhilHealth eClaims Context Panel */
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  eClaims Center
+                </h3>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2.5 bg-slate-50 space-y-1 text-xs">
+                <span className="text-[10px] text-slate-400 block font-bold">API TRANSMISSION</span>
+                <span className="font-bold text-emerald-700 flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Konsulta API Connected
+                </span>
+                <div className="text-[10px] text-slate-500">Batch Series 2026-R3</div>
+              </div>
+            </div>
+          )}
         </aside>
       )}
 
@@ -1139,71 +1674,87 @@ export function UnifiedClinicalWorkbench({
       )}
 
       {/* ========================================================================= */}
-      {/* COLUMN 3: TABBED CLINICAL WORKSPACE LIST (Matches Reference Style 1:1)    */}
+      {/* COLUMN 3: CLINICAL TAB STRIP & MODULE LIST                                */}
       {/* ========================================================================= */}
       <section
         className={`${
           mobileDetailViewOpen ? 'hidden md:flex' : 'flex'
         } w-full md:w-80 lg:w-88 shrink-0 border-r border-slate-200 bg-white flex-col select-none`}
       >
-        {/* Top Horizontal Clinical Tab Strip */}
-        <div className="flex items-center gap-1 overflow-x-auto px-3 py-2 border-b border-slate-100 text-xs scrollbar-none">
-          {[
-            'Timeline',
-            'Visits',
-            'Tasks',
-            'Meds',
-            'DoseSpot',
-            'Labs',
-            'Devices',
-            'Documents',
-            'Care Plans',
-            'Billing',
-            'Messages',
-          ].map((tab) => {
-            const isTabActive = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab as WorkbenchTab)}
-                className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs transition ${
-                  isTabActive
-                    ? 'bg-slate-100 font-bold text-slate-900 shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                {tab}
-              </button>
-            );
-          })}
-        </div>
+        {/* If in Patient Chart mode: Top Horizontal Clinical Tab Strip */}
+        {activeNav === 'patients' && (
+          <div className="flex items-center gap-1 overflow-x-auto px-3 py-2 border-b border-slate-100 text-xs scrollbar-none">
+            {[
+              'Timeline',
+              'Visits',
+              'Tasks',
+              'Meds',
+              'DoseSpot',
+              'Labs',
+              'Devices',
+              'Documents',
+              'Care Plans',
+              'Billing',
+              'Messages',
+            ].map((tab) => {
+              const isTabActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab as WorkbenchTab)}
+                  className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs transition ${
+                    isTabActive
+                      ? 'bg-slate-100 font-bold text-slate-900 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* Sub-Filter Bar under Active Tab (Exact match to screenshot for Tasks) */}
+        {/* Sub-Filter Bar under Active Tab / Module */}
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-slate-100 bg-slate-50/40">
           <div className="flex items-center gap-1.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setTaskFilter('MY')}
-              className={`px-2.5 py-1 rounded-full transition ${
-                taskFilter === 'MY'
-                  ? 'bg-slate-100 font-bold text-slate-900'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              My {activeTab}
-            </button>
-            <button
-              type="button"
-              onClick={() => setTaskFilter('ALL')}
-              className={`px-2.5 py-1 rounded-full transition ${
-                taskFilter === 'ALL'
-                  ? 'bg-slate-100 font-bold text-slate-900'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              All {activeTab}
-            </button>
+            {activeNav === 'patients' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setTaskFilter('MY')}
+                  className={`px-2.5 py-1 rounded-full transition ${
+                    taskFilter === 'MY'
+                      ? 'bg-slate-100 font-bold text-slate-900'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  My {activeTab}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTaskFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-full transition ${
+                    taskFilter === 'ALL'
+                      ? 'bg-slate-100 font-bold text-slate-900'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  All {activeTab}
+                </button>
+              </>
+            ) : activeNav === 'queue' ? (
+              <span className="font-bold text-slate-900 text-xs">Queue Stage Filter</span>
+            ) : activeNav === 'schedule' ? (
+              <span className="font-bold text-slate-900 text-xs">Daily Roster (Oct 05)</span>
+            ) : activeNav === 'spaces' ? (
+              <span className="font-bold text-slate-900 text-xs">Clinical Suites</span>
+            ) : activeNav === 'admit' ? (
+              <span className="font-bold text-slate-900 text-xs">Recent Admissions</span>
+            ) : (
+              <span className="font-bold text-slate-900 text-xs">Batch Transmittals</span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1244,7 +1795,8 @@ export function UnifiedClinicalWorkbench({
 
         {/* Clinical Item List Body */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {activeTab === 'Tasks' &&
+          {/* Patient Mode: Tasks List */}
+          {(activeNav === 'patients' && activeTab === 'Tasks') || activeNav === 'tasks' ? (
             currentPatient.tasks.map((task) => {
               const isSelected = activeTask?.id === task.id;
               return (
@@ -1286,73 +1838,103 @@ export function UnifiedClinicalWorkbench({
                   </div>
                 </div>
               );
-            })}
-
-          {activeTab === 'Visits' &&
-            currentPatient.encounters.map((enc) => (
-              <div
-                key={enc.id}
-                onClick={() => setMobileDetailViewOpen(true)}
-                className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-900">{enc.type}</h4>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
-                    {enc.status}
-                  </span>
+            })
+          ) : activeNav === 'patients' && activeTab === 'Visits' ? (
+            /* Patient Mode: Visits List */
+            currentPatient.encounters.map((enc) => {
+              const isSelected = activeEncounter?.id === enc.id;
+              return (
+                <div
+                  key={enc.id}
+                  onClick={() => {
+                    setSelectedEncounterId(enc.id);
+                    setMobileDetailViewOpen(true);
+                  }}
+                  className={`p-3.5 cursor-pointer transition ${
+                    isSelected
+                      ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900">{enc.type}</h4>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                      {enc.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">{enc.date} &bull; {enc.clinician}</div>
+                  <div className="mt-0.5 text-xs text-slate-700 font-medium">
+                    {enc.chiefComplaint}
+                  </div>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-500">{enc.date}</div>
-                <div className="mt-0.5 text-xs text-slate-700 font-medium">
-                  {enc.chiefComplaint}
+              );
+            })
+          ) : activeNav === 'patients' && activeTab === 'Meds' ? (
+            /* Patient Mode: Meds List */
+            currentPatient.medications.map((med) => {
+              const isSelected = activeMed?.id === med.id;
+              return (
+                <div
+                  key={med.id}
+                  onClick={() => {
+                    setSelectedMedId(med.id);
+                    setMobileDetailViewOpen(true);
+                  }}
+                  className={`p-3.5 cursor-pointer transition ${
+                    isSelected
+                      ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900">{med.genericName}</h4>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                      {med.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 font-medium">{med.dosage}</div>
+                  <div className="mt-1 text-[11px] text-slate-500 italic leading-snug">
+                    {med.instructions}
+                  </div>
                 </div>
-              </div>
-            ))}
-
-          {activeTab === 'Meds' &&
-            currentPatient.medications.map((med) => (
-              <div
-                key={med.id}
-                onClick={() => setMobileDetailViewOpen(true)}
-                className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-900">{med.genericName}</h4>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
-                    {med.status}
-                  </span>
+              );
+            })
+          ) : activeNav === 'patients' && activeTab === 'Labs' ? (
+            /* Patient Mode: Labs List */
+            currentPatient.labs.map((lab) => {
+              const isSelected = activeLab?.id === lab.id;
+              return (
+                <div
+                  key={lab.id}
+                  onClick={() => {
+                    setSelectedLabId(lab.id);
+                    setMobileDetailViewOpen(true);
+                  }}
+                  className={`p-3.5 cursor-pointer transition ${
+                    isSelected
+                      ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900">{lab.testName}</h4>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[9px] font-bold text-blue-700 border border-blue-200">
+                      {lab.status}
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                    LOINC: {lab.loincCode} &bull; {lab.orderedDate}
+                  </div>
+                  {lab.resultsSummary && (
+                    <p className="mt-1 text-xs text-slate-600 line-clamp-2">
+                      {lab.resultsSummary}
+                    </p>
+                  )}
                 </div>
-                <div className="text-xs text-slate-600 font-medium">{med.dosage}</div>
-                <div className="mt-1 text-[11px] text-slate-500 italic leading-snug">
-                  {med.instructions}
-                </div>
-              </div>
-            ))}
-
-          {activeTab === 'Labs' &&
-            currentPatient.labs.map((lab) => (
-              <div
-                key={lab.id}
-                onClick={() => setMobileDetailViewOpen(true)}
-                className="p-3.5 hover:bg-slate-50/60 cursor-pointer transition"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-900">{lab.testName}</h4>
-                  <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[9px] font-bold text-blue-700 border border-blue-200">
-                    {lab.status}
-                  </span>
-                </div>
-                <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                  LOINC: {lab.loincCode} &bull; {lab.orderedDate}
-                </div>
-                {lab.resultsSummary && (
-                  <p className="mt-1 text-xs text-slate-600 line-clamp-2">
-                    {lab.resultsSummary}
-                  </p>
-                )}
-              </div>
-            ))}
-
-          {activeTab === 'Billing' && (
+              );
+            })
+          ) : (activeNav === 'patients' && activeTab === 'Billing') || activeNav === 'billing' ? (
+            /* Patient Mode: Billing List */
             <div
               onClick={() => setMobileDetailViewOpen(true)}
               className="p-3.5 space-y-3 cursor-pointer"
@@ -1378,17 +1960,168 @@ export function UnifiedClinicalWorkbench({
                 ))}
               </div>
             </div>
+          ) : activeNav === 'queue' ? (
+            /* Operational Mode: Queue List */
+            activeQueueList.map((q) => {
+              const isSelected = activeQueuePatient?.id === q.id;
+              return (
+                <div
+                  key={q.id}
+                  onClick={() => {
+                    setSelectedQueuePatientId(q.id);
+                    setMobileDetailViewOpen(true);
+                  }}
+                  className={`p-3.5 cursor-pointer transition ${
+                    isSelected
+                      ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900">{q.name}</h4>
+                    <span
+                      className={`rounded px-1.5 py-0.2 text-[9px] font-bold border ${
+                        q.stage === 'CONSULT'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : q.stage === 'TRIAGE'
+                          ? 'bg-cyan-50 text-cyan-700 border-cyan-200'
+                          : q.stage === 'BILLING'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {q.stage}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {q.gender}, {q.age}y &bull; Waiting: {q.waitMinutes}
+                  </div>
+                  <div className="text-xs text-slate-700 mt-1 line-clamp-1">
+                    {q.chiefComplaint}
+                  </div>
+                  {q.priority !== 'Standard' && (
+                    <span className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.2 text-[9px] font-bold text-amber-800 border border-amber-200">
+                      {q.priority}
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          ) : activeNav === 'schedule' ? (
+            /* Operational Mode: Schedule Appointment Slots */
+            appointments
+              .filter(
+                (a) =>
+                  scheduleDoctorFilter === 'ALL' || a.doctorName.includes(scheduleDoctorFilter)
+              )
+              .map((apt) => {
+                const isSelected = activeAppointment?.id === apt.id;
+                return (
+                  <div
+                    key={apt.id}
+                    onClick={() => {
+                      setSelectedAppointmentId(apt.id);
+                      setMobileDetailViewOpen(true);
+                    }}
+                    className={`p-3.5 cursor-pointer transition ${
+                      isSelected
+                        ? 'bg-slate-50/80 border-l-2 border-l-blue-600'
+                        : 'hover:bg-slate-50/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-blue-700">
+                        {apt.timeSlot}
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.2 text-[9px] font-bold border ${
+                          apt.status === 'CHECKED_IN'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        {apt.status}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 mt-1">
+                      {apt.patientName}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{apt.serviceType}</div>
+                  </div>
+                );
+              })
+          ) : activeNav === 'spaces' ? (
+            /* Operational Mode: Clinic Rooms */
+            [
+              { room: 'Room 201', spec: 'Obstetrics & Gynecology Suite', dr: 'Dr. Florence Espinosa', status: 'In Use' },
+              { room: 'Room 202', spec: 'Transvaginal & Pelvic Ultrasound', dr: 'Radiologist on Duty', status: 'Available' },
+              { room: 'Room 203', spec: 'Nurse Triage & Vital Signs', dr: 'Nurse Joy Reyes', status: 'In Use' },
+              { room: 'Room 204', spec: 'General Consultation & Internal Med', dr: 'Dr. Juan Carlos Ramos', status: 'Available' },
+            ].map((r, i) => (
+              <div key={i} className="p-3.5 hover:bg-slate-50 cursor-pointer transition">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-900">{r.room}</h4>
+                  <span className="text-[9px] font-bold rounded px-1.5 py-0.2 bg-slate-100 text-slate-700 border border-slate-200">
+                    {r.status}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-600 font-medium mt-0.5">{r.spec}</div>
+                <div className="text-[11px] text-slate-400">{r.dr}</div>
+              </div>
+            ))
+          ) : activeNav === 'admit' ? (
+            /* Operational Mode: Recent Admissions */
+            patientsList.slice(0, 5).map((pat) => (
+              <div
+                key={pat.id}
+                onClick={() => {
+                  setSelectedPatientId(pat.id);
+                  setActiveNav('patients');
+                }}
+                className="p-3.5 hover:bg-slate-50 cursor-pointer transition"
+              >
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-900">{pat.name}</h4>
+                  <span className="text-[9px] font-bold rounded px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Admitted
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  DOB: {pat.dob} ({pat.gender})
+                </div>
+                <div className="text-[11px] font-mono text-slate-400">
+                  PIN: {pat.insurance.policyId}
+                </div>
+              </div>
+            ))
+          ) : (
+            /* PhilHealth Batch Transmittals */
+            [
+              { id: 'TR-2026-00412', pat: 'Andrea Dizon', pkg: 'Konsulta Comprehensive First Visit', amount: 1750 },
+              { id: 'TR-2026-00398', pat: 'Benjamin Alcantara', pkg: 'Diabetes Follow-up & Lab Package', amount: 2200 },
+              { id: 'TR-2026-00350', pat: 'Maria Angelica Santos', pkg: 'Antenatal Consultation Package', amount: 1500 },
+            ].map((t) => (
+              <div key={t.id} className="p-3.5 hover:bg-slate-50 cursor-pointer transition">
+                <div className="flex justify-between items-center font-mono text-xs font-bold text-slate-900">
+                  <span>{t.id}</span>
+                  <span className="text-emerald-700">{formatPhp(t.amount)}</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-800 mt-1">{t.pat}</div>
+                <div className="text-[11px] text-slate-500">{t.pkg}</div>
+              </div>
+            ))
           )}
         </div>
       </section>
 
       {/* ========================================================================= */}
-      {/* COLUMN 4: DETAIL / ACTION WORKSTATION (Matches Reference Style 1:1)       */}
+      {/* COLUMN 4: FULL-WIDTH DETAIL & ACTION WORKSTATION                          */}
+      {/* (FLUID WIDTH: Zero dead whitespace on large monitors)                     */}
       {/* ========================================================================= */}
       <main
         className={`${
           mobileDetailViewOpen ? 'flex' : 'hidden md:flex'
-        } flex-1 bg-white overflow-y-auto flex-col p-4 sm:p-6 max-w-4xl`}
+        } flex-1 w-full min-w-0 bg-white overflow-y-auto flex-col p-4 sm:p-6 lg:p-8`}
       >
         {/* Mobile Drill-Down Back Header (< md) */}
         <div className="md:hidden flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
@@ -1396,18 +2129,21 @@ export function UnifiedClinicalWorkbench({
             type="button"
             onClick={() => setMobileDetailViewOpen(false)}
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-100 min-h-[44px]"
-            aria-label="Back to clinical list"
+            aria-label="Back to list"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span>← Back to {activeTab}</span>
+            <span>← Back to {activeNav === 'patients' ? activeTab : activeNav}</span>
           </button>
           <span className="text-xs font-bold text-slate-900 truncate max-w-[160px]">
-            {activeTask?.title || activeTab}
+            {activeNav === 'patients' ? activeTask?.title || activeTab : activeNav}
           </span>
         </div>
 
-        {activeTask ? (
-          <div className="space-y-6">
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 1: CLINICAL TASKS (Exact 1:1 match to reference image) */}
+        {/* ======================================================================= */}
+        {((activeNav === 'patients' && activeTab === 'Tasks') || activeNav === 'tasks') && activeTask && (
+          <div className="space-y-6 w-full">
             {/* Header: Task Title & Action Buttons (Trash & Solid Blue Checkmark) */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h2 className="text-base font-bold text-slate-900">
@@ -1441,7 +2177,7 @@ export function UnifiedClinicalWorkbench({
               {activeTask.description}
             </div>
 
-            {/* If task is lab review, display clinical finding box */}
+            {/* If task is lab review, display clinical finding box with Action Buttons */}
             {activeTask.category === 'LAB_REVIEW' && currentPatient.labs[0] && (
               <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
@@ -1455,11 +2191,11 @@ export function UnifiedClinicalWorkbench({
                 <p className="text-slate-700 leading-relaxed font-sans">
                   {currentPatient.labs[0].resultsSummary}
                 </p>
-                <div className="pt-2 flex items-center gap-2">
+                <div className="pt-2 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setShowRxModal(true)}
-                    className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                    className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition min-h-[36px]"
                   >
                     <FileText className="h-3.5 w-3.5" />
                     Issue e-Prescription (RA 6675)
@@ -1467,7 +2203,7 @@ export function UnifiedClinicalWorkbench({
                   <button
                     type="button"
                     onClick={() => setShowBillingModal(true)}
-                    className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition min-h-[36px]"
                   >
                     <CreditCard className="h-3.5 w-3.5" />
                     Print Cashier Bill
@@ -1538,67 +2274,881 @@ export function UnifiedClinicalWorkbench({
               </form>
             </div>
           </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-slate-400 text-xs italic">
-            Select an item from the list to view workstation details
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 2: VISITS & ENCOUNTERS (SOAP Notes Editor)             */}
+        {/* ======================================================================= */}
+        {activeNav === 'patients' && activeTab === 'Visits' && activeEncounter && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {activeEncounter.type}
+                </h2>
+                <div className="text-xs text-slate-500">
+                  {activeEncounter.date} &bull; Attending: {activeEncounter.clinician}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSoapSigned(true)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition min-h-[36px] ${
+                  soapSigned
+                    ? 'bg-emerald-600 text-white cursor-default'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {soapSigned ? (
+                  <>
+                    <Lock className="h-3.5 w-3.5" />
+                    <span>SOAP Note Signed & Locked</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Sign & Finalize Consultation</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Vitals Ribbon */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-xs">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">BLOOD PRESSURE</span>
+                <span className="text-sm font-bold text-slate-800">120/80 mmHg</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">HEART RATE</span>
+                <span className="text-sm font-bold text-slate-800">78 bpm</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">RESPIRATORY</span>
+                <span className="text-sm font-bold text-slate-800">18 cpm</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">TEMPERATURE</span>
+                <span className="text-sm font-bold text-slate-800">36.6 °C</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">SPO2</span>
+                <span className="text-sm font-bold text-emerald-700">99% Room Air</span>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                <span className="text-[10px] font-bold text-slate-400 block">WEIGHT & BMI</span>
+                <span className="text-sm font-bold text-slate-800">58 kg (22.6)</span>
+              </div>
+            </div>
+
+            {/* SOAP Clinical Sections */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1.5 shadow-2xs">
+                  <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block">
+                    S &bull; Subjective (Chief Complaint & HPI)
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={soapSubjective || activeEncounter.subjective}
+                    onChange={(e) => setSoapSubjective(e.target.value)}
+                    className="w-full text-xs text-slate-800 outline-none leading-relaxed resize-none"
+                  />
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1.5 shadow-2xs">
+                  <span className="text-xs font-bold text-purple-700 uppercase tracking-wider block">
+                    O &bull; Objective (Physical Exam & Diagnostic Findings)
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={soapObjective || activeEncounter.objective}
+                    onChange={(e) => setSoapObjective(e.target.value)}
+                    className="w-full text-xs text-slate-800 outline-none leading-relaxed resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1.5 shadow-2xs">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block">
+                    A &bull; Assessment & Clinical Diagnoses (ICD-10)
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={soapAssessment || activeEncounter.assessment}
+                    onChange={(e) => setSoapAssessment(e.target.value)}
+                    className="w-full text-xs text-slate-800 outline-none leading-relaxed resize-none"
+                  />
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1.5 shadow-2xs">
+                  <span className="text-xs font-bold text-amber-700 uppercase tracking-wider block">
+                    P &bull; Plan (Orders, Pharmacotherapy & Follow-up)
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={soapPlan || activeEncounter.plan}
+                    onChange={(e) => setSoapPlan(e.target.value)}
+                    className="w-full text-xs text-slate-800 outline-none leading-relaxed resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 3: MEDS (Philippine Generics Act RA 6675 Prescriptions)*/}
+        {/* ======================================================================= */}
+        {activeNav === 'patients' && activeTab === 'Meds' && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Electronic Prescriptions & Medications
+                </h2>
+                <div className="text-xs text-slate-500">
+                  Philippine Generics Act of 1988 (RA 6675) &bull; DOH Regulatory Compliant
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRxModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print Official Prescription Pad
+              </button>
+            </div>
+
+            {rxSuccessMessage && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{rxSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Drug Allergy Warning Banner */}
+            {currentPatient.allergies.length > 0 && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50/50 p-3 text-xs space-y-1">
+                <span className="font-bold text-rose-800 flex items-center gap-1.5">
+                  <ShieldAlert className="h-4 w-4 text-rose-600" />
+                  Prescription Allergy Alert
+                </span>
+                <p className="text-rose-700 leading-tight">
+                  Patient has verified hypersensitivity to:{' '}
+                  <strong>{currentPatient.allergies.map((a) => a.substance).join(', ')}</strong>.
+                  Prescribe alternative generic classes.
+                </p>
+              </div>
+            )}
+
+            {/* Active Medications Cards */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Active Regimens
+              </h3>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                {currentPatient.medications.map((med) => (
+                  <div key={med.id} className="rounded-lg border border-slate-200 p-3.5 bg-white space-y-1 shadow-2xs">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs">{med.genericName}</div>
+                        <div className="text-xs text-slate-600 font-medium">{med.dosage}</div>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.2 text-[9px] font-bold text-emerald-700 border border-emerald-200">
+                        {med.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 italic">{med.instructions}</div>
+                    <div className="text-[11px] text-slate-400 pt-1">
+                      Prescribed by {med.prescribedBy} on {med.datePrescribed}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Add New Prescription Form */}
+            <form onSubmit={handleAddPrescription} className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 space-y-3">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Prescribe New Medication (RA 6675)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                    Generic Name (Required by Law)
+                  </label>
+                  <input
+                    type="text"
+                    value={newRxGeneric}
+                    onChange={(e) => setNewRxGeneric(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white p-2 outline-none focus:border-blue-500"
+                    placeholder="e.g. Amoxicillin Trihydrate"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                    Dosage & Strength
+                  </label>
+                  <input
+                    type="text"
+                    value={newRxDose}
+                    onChange={(e) => setNewRxDose(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white p-2 outline-none focus:border-blue-500"
+                    placeholder="e.g. 500mg capsule"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                    Signatura / Instructions (Sig)
+                  </label>
+                  <input
+                    type="text"
+                    value={newRxSig}
+                    onChange={(e) => setNewRxSig(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white p-2 outline-none focus:border-blue-500"
+                    placeholder="e.g. 1 capsule every 8 hours for 7 days after meals"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+              >
+                + Add to Prescription Pad
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 4: LABS & DIAGNOSTICS                                  */}
+        {/* ======================================================================= */}
+        {activeNav === 'patients' && activeTab === 'Labs' && activeLab && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {activeLab.testName}
+                </h2>
+                <div className="text-xs text-slate-500">
+                  LOINC: {activeLab.loincCode} &bull; Ordered Date: {activeLab.orderedDate}
+                </div>
+              </div>
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200">
+                {activeLab.status}
+              </span>
+            </div>
+
+            {labSuccessMessage && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{labSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Diagnostic Report Narrative Box */}
+            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3 shadow-2xs">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                Official Radiologist / Laboratory Report
+              </span>
+              <p className="text-xs text-slate-800 leading-relaxed font-sans">
+                {activeLab.resultsSummary ||
+                  'Ultrasound examination confirms an anteverted uterus measuring 7.8 x 4.5 x 5.1 cm. Endometrial stripe thickness measures 14.2 mm with uniform secretory appearance. Right ovary measures 2.8 x 1.9 cm; left ovary measures 2.5 x 1.7 cm. No adnexal solid or cystic masses detected. No free pelvic fluid.'}
+              </p>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Interpreting Radiologist: Dr. Ramon Bautista, MD, FPCR</span>
+                <span className="font-mono">License: PRC 0089211</span>
+              </div>
+            </div>
+
+            {/* Order New Lab Requisition */}
+            <form onSubmit={handleAddLabOrder} className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 space-y-3">
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Order Diagnostic Requisition
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                    Diagnostic Test / Study Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newLabTestName}
+                    onChange={(e) => setNewLabTestName(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white p-2 outline-none focus:border-blue-500"
+                    placeholder="e.g. Complete Blood Count (CBC)"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                    LOINC Code
+                  </label>
+                  <input
+                    type="text"
+                    value={newLabLoinc}
+                    onChange={(e) => setNewLabLoinc(e.target.value)}
+                    className="w-full rounded border border-slate-300 bg-white p-2 outline-none focus:border-blue-500"
+                    placeholder="e.g. 58410-2"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+              >
+                + Transmit Diagnostic Requisition
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 5: CASHIER & PHILHEALTH BILLING                        */}
+        {/* ======================================================================= */}
+        {((activeNav === 'patients' && activeTab === 'Billing') || activeNav === 'billing') && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Cashier Checkout & PhilHealth Ledger
+                </h2>
+                <div className="text-xs text-slate-500">
+                  Official BIR Compliant &bull; PhilHealth Konsulta Subsidy Calculator
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBillingModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print Official BIR Receipt
+              </button>
+            </div>
+
+            {/* Discount / Statutory Selector */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <span className="font-bold text-slate-800">
+                Philippine Statutory Discount Category:
+              </span>
+              <div className="flex gap-2">
+                {[
+                  { id: 'NONE', label: 'Regular Patient' },
+                  { id: 'SENIOR', label: 'Senior Citizen (RA 9994)' },
+                  { id: 'PWD', label: 'PWD (RA 7277)' },
+                ].map((type) => (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => setBillingPatientType(type.id as 'SENIOR' | 'PWD' | 'NONE')}
+                    className={`rounded-lg px-3 py-1.5 font-bold transition min-h-[36px] ${
+                      billingPatientType === type.id
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Invoice Line Items Table */}
+            <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-2xs">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2.5">Item Description</th>
+                    <th className="px-4 py-2.5">Category</th>
+                    <th className="px-4 py-2.5 text-right">Amount (PHP)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sampleBillingItems.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-2.5 font-semibold text-slate-800">{item.description}</td>
+                      <td className="px-4 py-2.5 text-slate-500">{item.category}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-900">
+                        {formatPhp(item.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Financial Calculation Breakdown */}
+              <div className="bg-slate-50/80 p-4 border-t border-slate-200 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Gross Clinic Billing:</span>
+                  <span className="font-mono font-semibold">{formatPhp(grossBilling)}</span>
+                </div>
+                {billingPatientType !== 'NONE' && (
+                  <div className="flex justify-between text-rose-700 font-semibold">
+                    <span>Senior / PWD 20% Discount + 12% VAT Exemption:</span>
+                    <span className="font-mono">-{formatPhp(discountCalc.discountAmount + discountCalc.vatAmount)}</span>
+                  </div>
+                )}
+                {philHealthCredit > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>PhilHealth Konsulta Benefit Credit:</span>
+                    <span className="font-mono">-{formatPhp(philHealthCredit)}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-200 flex justify-between text-sm font-black text-slate-900">
+                  <span>Total Amount Due (Net Payable):</span>
+                  <span className="font-mono text-base text-blue-700">{formatPhp(netBillingPayable)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cash Payment Tender Calculator */}
+            <div className="rounded-lg border border-slate-200 p-4 bg-slate-50/50 space-y-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                Cash Tender & Change Due
+              </span>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-700">Cash Received: ₱</span>
+                  <input
+                    type="number"
+                    value={tenderAmount}
+                    onChange={(e) => setTenderAmount(Number(e.target.value))}
+                    className="w-32 rounded border border-slate-300 bg-white p-2 font-mono font-bold outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2 font-bold text-xs">
+                  <span className="text-slate-500">Change Due:</span>
+                  <span className="font-mono text-emerald-700 text-sm">
+                    {formatPhp(Math.max(0, tenderAmount - netBillingPayable))}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 6: FACILITY QUEUE PATIENT ACTIONS                     */}
+        {/* ======================================================================= */}
+        {activeNav === 'queue' && activeQueuePatient && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {activeQueuePatient.name}
+                </h2>
+                <div className="text-xs text-slate-500">
+                  Stage: {activeQueuePatient.stage} &bull; Attending: {activeQueuePatient.doctor}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPatientId(activeQueuePatient.id);
+                  setActiveNav('patients');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition min-h-[36px]"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Open Patient Chart
+              </button>
+            </div>
+
+            {/* Queue Stage Pipeline */}
+            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              {[
+                { stage: 'CHECKIN', label: '1. Arrived' },
+                { stage: 'TRIAGE', label: '2. Triage' },
+                { stage: 'CONSULT', label: '3. Consult' },
+                { stage: 'BILLING', label: '4. Cashier' },
+              ].map((s) => {
+                const isCurrent = activeQueuePatient.stage === s.stage;
+                return (
+                  <div
+                    key={s.stage}
+                    className={`rounded-lg p-3 border transition ${
+                      isCurrent
+                        ? 'border-blue-500 bg-blue-50 text-blue-800 font-bold'
+                        : 'border-slate-200 bg-slate-50 text-slate-400'
+                    }`}
+                  >
+                    <span>{s.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 space-y-3 bg-white shadow-2xs text-xs">
+              <span className="font-bold text-slate-900 block uppercase tracking-wider text-[11px]">
+                Triage Clinical Details
+              </span>
+              <div>
+                <span className="text-slate-400 block text-[10px] font-bold">CHIEF COMPLAINT</span>
+                <p className="text-slate-800 font-medium mt-0.5">{activeQueuePatient.chiefComplaint}</p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-slate-500">Wait Duration: <strong>{activeQueuePatient.waitMinutes}</strong></span>
+                <span className="text-slate-500">Priority: <strong>{activeQueuePatient.priority}</strong></span>
+              </div>
+            </div>
+
+            {/* Advance Stage Actions */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleAdvanceQueueStage(activeQueuePatient.id)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[44px]"
+              >
+                <span>Advance to Next Stage →</span>
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition min-h-[44px]"
+              >
+                <BellRing className="h-4 w-4" />
+                <span>Call Patient into Room 204</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 7: SCHEDULE & APPOINTMENT WORKSTATION                  */}
+        {/* ======================================================================= */}
+        {activeNav === 'schedule' && activeAppointment && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {activeAppointment.patientName}
+                </h2>
+                <div className="text-xs text-slate-500">
+                  {activeAppointment.timeSlot} &bull; {activeAppointment.serviceType}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCheckInAppointment(activeAppointment)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition min-h-[36px]"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Check In to Facility Queue
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 block">PATIENT DETAILS</span>
+                <div className="font-bold text-slate-800">{activeAppointment.patientName}</div>
+                <div className="text-slate-500">{activeAppointment.patientGender}, {activeAppointment.patientAge} years old</div>
+                <div className="text-slate-500">Phone: {activeAppointment.patientPhone}</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 block">APPOINTMENT INFO</span>
+                <div className="font-bold text-slate-800">{activeAppointment.doctorName}</div>
+                <div className="text-slate-500">Duration: {activeAppointment.durationMinutes} mins</div>
+                <div className="text-emerald-700 font-semibold">{activeAppointment.status}</div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 bg-slate-50 text-xs space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 block">CHIEF REASON FOR VISIT</span>
+              <p className="text-slate-800">{activeAppointment.chiefComplaint}</p>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 8: CLINIC ADMISSION FORM (+ NEW PATIENT)               */}
+        {/* ======================================================================= */}
+        {activeNav === 'admit' && (
+          <form onSubmit={handleAdmitSubmit} className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  New Patient Clinical Admission & Registration
+                </h2>
+                <div className="text-xs text-slate-500">
+                  Philippine DOH & PhilHealth Konsulta Standard Intake Protocol
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+              >
+                <UserPlus className="h-4 w-4" />
+                Save & Admit Directly to Queue
+              </button>
+            </div>
+
+            {admissionSuccess && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>Patient successfully registered and dispatched to Triage Queue!</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Full Name (Last, First, Middle)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={admitForm.name}
+                  onChange={(e) => setAdmitForm({ ...admitForm, name: e.target.value })}
+                  placeholder="e.g. Del Rosario, Catherine Joy"
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  value={admitForm.dob}
+                  onChange={(e) => setAdmitForm({ ...admitForm, dob: e.target.value })}
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Biological Gender
+                </label>
+                <select
+                  value={admitForm.gender}
+                  onChange={(e) => setAdmitForm({ ...admitForm, gender: e.target.value })}
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                >
+                  <option value="Female">Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  PhilHealth Identification Number (PIN)
+                </label>
+                <input
+                  type="text"
+                  value={admitForm.philhealth}
+                  onChange={(e) => setAdmitForm({ ...admitForm, philhealth: e.target.value })}
+                  placeholder="12-345678901-2"
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs font-mono outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Statutory Discount Eligibility
+                </label>
+                <select
+                  value={admitForm.statutoryType}
+                  onChange={(e) => setAdmitForm({ ...admitForm, statutoryType: e.target.value })}
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                >
+                  <option value="REGULAR">Regular Patient</option>
+                  <option value="SENIOR">Senior Citizen (RA 9994)</option>
+                  <option value="PWD">Person With Disability (RA 7277)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Contact Mobile Number
+                </label>
+                <input
+                  type="text"
+                  value={admitForm.phone}
+                  onChange={(e) => setAdmitForm({ ...admitForm, phone: e.target.value })}
+                  placeholder="+63 9XX XXX XXXX"
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Residential Address
+                </label>
+                <input
+                  type="text"
+                  value={admitForm.address}
+                  onChange={(e) => setAdmitForm({ ...admitForm, address: e.target.value })}
+                  placeholder="Street, Barangay, City/Municipality, Province"
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Chief Complaint & Triage Presentation
+                </label>
+                <textarea
+                  rows={3}
+                  value={admitForm.chiefComplaint}
+                  onChange={(e) => setAdmitForm({ ...admitForm, chiefComplaint: e.target.value })}
+                  placeholder="Describe patient presenting symptoms and triage notes..."
+                  className="w-full rounded border border-slate-300 bg-white p-2 text-xs outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 9: CLINICAL SPACES & BRANCHES                          */}
+        {/* ======================================================================= */}
+        {activeNav === 'spaces' && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {activeBranch.name} ({activeBranch.code})
+                </h2>
+                <div className="text-xs text-slate-500">
+                  {activeBranch.address.line}, {activeBranch.address.city}, {activeBranch.address.province}
+                </div>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                Operating Normal
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 block">PHILHEALTH ACCREDITATION</span>
+                <div className="font-bold text-slate-800">Konsulta DOH-Licensed</div>
+                <div className="text-slate-500">Facility ID: PH-R3-OLG-042</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 block">CLINIC CONTACT</span>
+                <div className="font-bold text-slate-800">{activeBranch.phone}</div>
+                <div className="text-slate-500">Direct Landline & Teleconsult</div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3 bg-white space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 block">CAPACITY OCCUPANCY</span>
+                <div className="font-bold text-slate-800">4 Consultation Rooms</div>
+                <div className="text-emerald-700 font-semibold">Active Dispatch</div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 bg-slate-50 text-xs space-y-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">
+                Standard Operating Schedule
+              </span>
+              <p className="text-slate-700">{activeBranch.operatingHours}</p>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================================= */}
+        {/* WORKSTATION VIEW 10: PHILHEALTH CLAIMS CENTER                           */}
+        {/* ======================================================================= */}
+        {activeNav === 'claims' && (
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  PhilHealth eClaims Transmittal Verification
+                </h2>
+                <div className="text-xs text-slate-500">
+                  CF4 Clinical Summaries & Electronic Claims Batch Generator
+                </div>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                Konsulta API Connected
+              </span>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3 shadow-2xs text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                <span className="font-mono font-bold text-slate-900 text-sm">TR-2026-00412</span>
+                <span className="font-mono text-emerald-700 font-bold text-sm">₱ 1,750.00</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-700">
+                <div>Member: <strong>Andrea Dizon</strong></div>
+                <div>PIN: <strong className="font-mono">12-345678901-2</strong></div>
+                <div>Package: <strong>Konsulta Comprehensive First Visit</strong></div>
+                <div>ICD-10 Code: <strong className="font-mono">N93.8</strong></div>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded bg-blue-600 px-3 py-1.5 font-bold text-white hover:bg-blue-700 transition min-h-[36px]"
+                >
+                  Transmit XML to PhilHealth
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-50 transition min-h-[36px]"
+                >
+                  Inspect CF4 Form
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>
 
       {/* ========================================================================= */}
-      {/* MODAL: ADD ALLERGY                                                        */}
+      {/* MODAL 1: ADD ALLERGY                                                      */}
       {/* ========================================================================= */}
       {showAddAllergyModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4">
-          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900">Document Patient Allergy</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Add Patient Allergy</h3>
               <button
                 type="button"
                 onClick={() => setShowAddAllergyModal(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
-                aria-label="Close"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={handleSaveAllergy} className="space-y-3">
+            <form onSubmit={handleSaveAllergy} className="space-y-3 text-xs">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
                   Allergenic Substance / Drug
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Amoxicillin, Ibuprofen, Shellfish"
                   value={newAllergen}
                   onChange={(e) => setNewAllergen(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
+                  placeholder="e.g. Aspirin, Co-Amoxiclav, Peanut"
+                  className="w-full rounded border border-slate-300 p-2 outline-none focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Observed Clinical Reaction
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Reaction & Manifestations
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Facial edema, urticaria, bronchospasm"
                   value={newAllergyReaction}
                   onChange={(e) => setNewAllergyReaction(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
+                  placeholder="e.g. Urticaria, Bronchospasm, Anaphylaxis"
+                  className="w-full rounded border border-slate-300 p-2 outline-none focus:border-blue-500"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddAllergyModal(false)}
-                  className="rounded-lg px-4 py-2.5 text-sm sm:text-xs font-medium text-slate-600 hover:bg-slate-100 min-h-[44px]"
+                  className="rounded px-3 py-1.5 text-slate-600 hover:bg-slate-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm sm:text-xs font-semibold text-white hover:bg-blue-700 min-h-[44px]"
+                  className="rounded bg-blue-600 px-4 py-1.5 font-bold text-white hover:bg-blue-700"
                 >
                   Save Allergy
                 </button>
@@ -1609,59 +3159,58 @@ export function UnifiedClinicalWorkbench({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: ADD PROBLEM (ICD-10)                                               */}
+      {/* MODAL 2: ADD CLINICAL PROBLEM (ICD-10)                                    */}
       {/* ========================================================================= */}
       {showAddProblemModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4">
-          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-lg border border-slate-200 bg-white p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900">Add Clinical Problem / Diagnosis</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">Add Clinical Problem (ICD-10)</h3>
               <button
                 type="button"
                 onClick={() => setShowAddProblemModal(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-h-[44px] min-w-[44px]"
-                aria-label="Close"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={handleSaveProblem} className="space-y-3">
+            <form onSubmit={handleSaveProblem} className="space-y-3 text-xs">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Condition / Diagnostic Term
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                  Clinical Condition / Diagnosis
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Essential Hypertension, Type 2 Diabetes"
                   value={newConditionName}
                   onChange={(e) => setNewConditionName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs outline-none focus:border-blue-500 min-h-[44px]"
+                  placeholder="e.g. Essential Hypertension"
+                  className="w-full rounded border border-slate-300 p-2 outline-none focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
                   ICD-10 Code
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. I10, E11.9, N93.8"
                   value={newIcd10Code}
                   onChange={(e) => setNewIcd10Code(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 p-2.5 text-base sm:text-xs font-mono outline-none focus:border-blue-500 min-h-[44px]"
+                  placeholder="e.g. I10"
+                  className="w-full rounded border border-slate-300 p-2 outline-none focus:border-blue-500 font-mono"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddProblemModal(false)}
-                  className="rounded-lg px-4 py-2.5 text-sm sm:text-xs font-medium text-slate-600 hover:bg-slate-100 min-h-[44px]"
+                  className="rounded px-3 py-1.5 text-slate-600 hover:bg-slate-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm sm:text-xs font-semibold text-white hover:bg-blue-700 min-h-[44px]"
+                  className="rounded bg-blue-600 px-4 py-1.5 font-bold text-white hover:bg-blue-700"
                 >
                   Save Problem
                 </button>
@@ -1672,59 +3221,78 @@ export function UnifiedClinicalWorkbench({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: PRINTABLE OFFICIAL BILLING RECEIPT                                 */}
+      {/* MODAL 3: PRINTABLE PHILIPPINE CASHIER BILL                                */}
       {/* ========================================================================= */}
-      <PrintableBillingModal
-        isOpen={showBillingModal}
-        onClose={() => setShowBillingModal(false)}
-        branch={currentBranch}
-        statementNo="OR-2026-9041"
-        patient={{
-          name: currentPatient.name,
-          age: parseInt(currentPatient.age) || 42,
-          gender: currentPatient.gender,
-          address: `${currentPatient.address}, ${currentPatient.city}`,
-          philhealth: currentPatient.insurance.policyId,
-          discountType: (currentPatient.insurance.statutoryType as 'SENIOR' | 'PWD' | 'NONE') || 'NONE',
-          discountId: currentPatient.insurance.statutoryId,
-        }}
-        items={sampleBillingItems}
-        philhealthCredit={philHealthCredit}
-        paymentMethod="CASH"
-        cashierName={currentUser.name}
-      />
+      {showBillingModal && (
+        <PrintableBillingModal
+          isOpen={showBillingModal}
+          onClose={() => setShowBillingModal(false)}
+          branch={activeBranch}
+          statementNo="SOA-2026-09281"
+          statementDate="October 04, 2026"
+          patient={{
+            name: currentPatient.name,
+            age: parseInt(currentPatient.age) || 42,
+            gender: currentPatient.gender,
+            address: `${currentPatient.address}, ${currentPatient.city}`,
+            philhealth: currentPatient.insurance.policyId,
+            discountType: billingPatientType,
+            discountId: currentPatient.insurance.statutoryId,
+          }}
+          items={sampleBillingItems}
+          philhealthCredit={philHealthCredit}
+          cashierName={activeUser.name}
+          paymentMethod="Cash (PHP)"
+        />
+      )}
 
       {/* ========================================================================= */}
-      {/* MODAL: PRINTABLE E-PRESCRIPTION (RA 6675)                                 */}
+      {/* MODAL 4: PRINTABLE PHILIPPINE GENERICS PRESCRIPTION (RA 6675)             */}
       {/* ========================================================================= */}
-      <PrintablePrescriptionModal
-        isOpen={showRxModal}
-        onClose={() => setShowRxModal(false)}
-        branch={currentBranch}
-        patient={{
-          name: currentPatient.name,
-          age: parseInt(currentPatient.age) || 42,
-          gender: currentPatient.gender,
-          address: `${currentPatient.address}, ${currentPatient.city}`,
-          philhealth: currentPatient.insurance.policyId,
-          seniorId: currentPatient.insurance.statutoryId,
-        }}
-        prescriptions={currentPatient.medications.map((m) => ({
-          genericName: m.genericName,
-          brandName: m.brandName,
-          dosage: m.dosage,
-          route: 'Oral (PO)',
-          frequency: 'Once Daily (OD)',
-          duration: '30 days',
-          dispenseQty: '30 tablets',
-          instructions: m.instructions,
-        }))}
-        physician={{
-          name: currentUser.name,
-          title: 'Obstetrician-Gynecologist & Primary Care',
-          prcNo: '0089241',
-          ptrNo: '5521901',
-          s2No: 'S2-2025-4190',
+      {showRxModal && (
+        <PrintablePrescriptionModal
+          isOpen={showRxModal}
+          onClose={() => setShowRxModal(false)}
+          branch={activeBranch}
+          encounterDate="October 04, 2026"
+          patient={{
+            name: currentPatient.name,
+            age: parseInt(currentPatient.age) || 42,
+            gender: currentPatient.gender,
+            address: `${currentPatient.address}, ${currentPatient.city}`,
+            philhealth: currentPatient.insurance.policyId,
+            seniorId: currentPatient.insurance.statutoryId,
+          }}
+          physician={{
+            name: currentPatient.primaryClinician,
+            title: 'MD, FPOGS - Obstetrician & Gynecologist',
+            prcNo: 'PRC-0098412',
+            ptrNo: 'PTR-2026-88192',
+            s2No: 'S2-0921-8841',
+          }}
+          prescriptions={currentPatient.medications.map((m) => ({
+            genericName: m.genericName,
+            brandName: m.brandName,
+            dosage: m.dosage,
+            route: 'Oral',
+            frequency: 'Every 8 hours',
+            duration: '7 days',
+            dispenseQty: '21 capsules',
+            instructions: m.instructions,
+          }))}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: GLOBAL ⌘K COMMAND SEARCH OMNIBOX                                 */}
+      {/* ========================================================================= */}
+      <CommandSearchModal
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectPatient={(patient) => {
+          setSearchOpen(false);
+          setSelectedPatientId(patient.id);
+          setActiveNav('patients');
         }}
       />
     </div>
