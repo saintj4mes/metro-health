@@ -12,6 +12,7 @@ import {
 import { Sidebar, NavItem } from '@/components/Sidebar';
 import { TopHeader } from '@/components/TopHeader';
 import { CommandSearchModal } from '@/components/CommandSearchModal';
+import { UnifiedClinicalWorkbench, WorkbenchTab } from '@/components/UnifiedClinicalWorkbench';
 import { QueueView } from '@/components/QueueView';
 import { PatientChart } from '@/components/PatientChart';
 import { PatientDirectoryView } from '@/components/PatientDirectoryView';
@@ -23,19 +24,11 @@ import { ClinicBranchesView } from '@/components/ClinicBranchesView';
 import { UserManagementView } from '@/components/UserManagementView';
 import { AppointmentCalendarMatrix } from '@/components/AppointmentCalendarMatrix';
 import { AuditTrailView } from '@/components/AuditTrailView';
-import {
-  Calendar,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
-  FileCheck,
-  Building2,
-  AlertCircle,
-} from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 export default function ClinicalWorkbenchPage() {
   const [currentBranch, setCurrentBranch] = useState<BranchLocation>(CLINIC_BRANCHES[0]);
-  const [currentNav, setCurrentNav] = useState<NavItem>('queue');
+  const [currentNav, setCurrentNav] = useState<NavItem>('chart');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
 
@@ -44,7 +37,7 @@ export default function ClinicalWorkbenchPage() {
   const [currentUser, setCurrentUser] = useState<StaffUser>(INITIAL_STAFF_USERS[0]); // Default: Dr. Florence Espinosa (Main Doctor)
 
   // Active Patient Chart Selection
-  const [selectedPatientId, setSelectedPatientId] = useState<string>('pat-101');
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('pat-105');
   const [patientChartTab, setPatientChartTab] = useState<'soap' | 'vitals' | 'rx' | 'history' | 'billing'>('soap');
 
   // Global ⌘K Keyboard Shortcut Listener
@@ -87,6 +80,32 @@ export default function ClinicalWorkbenchPage() {
     }
   };
 
+  // Primary 4-Column Canvas Medical Clinical EHR Workspace
+  if (currentNav === 'chart') {
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-white font-sans text-slate-900 antialiased">
+        <UnifiedClinicalWorkbench
+          currentBranch={currentBranch}
+          currentUser={currentUser}
+          initialPatientId={selectedPatientId}
+          initialTab="Tasks"
+          onNavigateToView={(view) => setCurrentNav(view as NavItem)}
+          onOpenSearch={() => setSearchOpen(true)}
+        />
+
+        {/* Global ⌘K Patient Search Omnibox */}
+        <CommandSearchModal
+          isOpen={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          onSelectPatient={(patient) => {
+            setSearchOpen(false);
+            handleOpenPatientChart(patient.id, 'soap');
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
       {/* 1. Left Clinical Navigation Sidebar */}
@@ -121,16 +140,6 @@ export default function ClinicalWorkbenchPage() {
                 branch={currentBranch}
                 onOpenPatientChart={handleOpenPatientChart}
                 onNewAdmission={() => setCurrentNav('admit')}
-              />
-            )}
-
-            {/* View 2: Focused Patient Chart (with Sticky Banner, Flowsheet, Rx, & Billing) */}
-            {currentNav === 'chart' && (
-              <PatientChart
-                branch={currentBranch}
-                patientId={selectedPatientId}
-                initialTab={patientChartTab}
-                onBackToQueue={() => setCurrentNav('queue')}
               />
             )}
 

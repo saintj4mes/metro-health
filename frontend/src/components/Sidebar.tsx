@@ -120,24 +120,24 @@ export function Sidebar({
       }`}
     >
       {/* Brand Header */}
-      <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
+      <div className="flex h-14 items-center justify-between border-b border-slate-100 px-4">
         {!collapsed && (
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-bold text-sm">
-              MH
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white shadow-xs">
+              <span className="text-base font-black leading-none">+</span>
             </div>
             <div>
-              <div className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-none">
-                Metro Health <span className="text-cyan-700 dark:text-cyan-400">PH</span>
+              <div className="font-bold text-xs tracking-tight text-slate-900 leading-none">
+                Metro Health <span className="text-purple-600">PH</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium">EHR Clinical System</span>
+              <span className="text-[10px] text-slate-400 font-medium">Clinical EHR</span>
             </div>
           </div>
         )}
 
         {collapsed && (
-          <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white font-bold text-sm">
-            M
+          <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-black text-sm">
+            +
           </div>
         )}
 
@@ -145,7 +145,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -154,13 +154,13 @@ export function Sidebar({
 
       {/* Active Clinic Facility Card */}
       {!collapsed && (
-        <div className="mx-2.5 mt-2.5 p-2 rounded border border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-800/40">
+        <div className="mx-2.5 mt-2.5 p-2 rounded-lg border border-slate-200/80 bg-slate-50/50">
           <div className="flex items-start gap-2">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700">
               <Building2 className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+              <div className="text-xs font-bold text-slate-900 truncate">
                 {currentBranch.name.replace('Metro Health - ', '')}
               </div>
               <div className="text-[10px] text-slate-400 truncate">
@@ -172,7 +172,7 @@ export function Sidebar({
       )}
 
       {/* Nav Menu */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3.5">
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
         {navSections.map((section, idx) => (
           <div key={idx} className="space-y-0.5">
             {!collapsed && (
@@ -188,15 +188,15 @@ export function Sidebar({
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
                   title={collapsed ? item.label : undefined}
-                  className={`group flex w-full items-center gap-2.5 rounded px-2.5 py-1.5 text-xs font-medium transition ${
+                  className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
                     isActive
-                      ? 'bg-slate-100 font-semibold text-slate-900 dark:bg-slate-800 dark:text-white border-l-2 border-cyan-800'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+                      ? 'bg-sky-50 font-semibold text-sky-700 shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
                   <Icon
-                    className={`h-3.5 w-3.5 shrink-0 ${
-                      isActive ? 'text-cyan-800 dark:text-cyan-400' : 'text-slate-400 group-hover:text-slate-600'
+                    className={`h-4 w-4 shrink-0 transition ${
+                      isActive ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'
                     }`}
                   />
                   {!collapsed && (
